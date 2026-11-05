@@ -2,7 +2,7 @@ import { useLayoutEffect, type RefObject } from 'react'
 import gsap from 'gsap'
 import { collaborators, createCursor } from './design-tools'
 import { addElementConstruction } from './element-construction'
-import { getMotionRect, retainMotionFrame } from './motion-frame'
+import { getCreationSourcePoint, getMotionRect, retainMotionFrame } from './motion-frame'
 import { cancelMotionRead, queueMotionRead } from './motion-read'
 import { interpolateCursor } from './cursor-travel'
 
@@ -36,32 +36,26 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
         const at = .03 + index * .025
         const moveX = gsap.quickSetter(cursor, 'x', 'px')
         const moveY = gsap.quickSetter(cursor, 'y', 'px')
-        const point = { x: 0, y: 0 }
         const readKey = {}
         readKeys.push(readKey)
-        const sourcePoint = () => {
-          const box = getMotionRect(source)
+        const sourcePoint = () => getCreationSourcePoint(page)
+        const targetPoint = () => {
+          const rect = getMotionRect(item, true)
           const scene = getMotionRect(page)
-          return { x: box.left + box.width / 2 - scene.left, y: box.top + box.height * .4 - scene.top }
+          return { x: rect.right - scene.left - page.clientLeft + page.scrollLeft + 4, y: rect.top - scene.top - page.clientTop + page.scrollTop + 3 }
         }
         const track = () => {
           queueMotionRead(readKey, () => {
             if (disposed) return
-            const rect = getMotionRect(item, true)
-            const scene = getMotionRect(page)
-            const x = rect.right - scene.left + 4
-            const y = rect.top - scene.top + 3
+            const position = targetPoint()
             return () => {
               if (disposed) return
-              point.x = x
-              point.y = y
-              moveX(x)
-              moveY(y)
+              moveX(position.x)
+              moveY(position.y)
             }
           })
         }
-        const birth = sourcePoint()
-        activeTimeline.fromTo(cursor, { autoAlpha: 0, scale: .18, x: birth.x, y: birth.y }, { autoAlpha: 1, scale: 1, duration: .16, ease: 'sine.out' }, Math.max(0, at - .08))
+        activeTimeline.fromTo(cursor, { autoAlpha: 0, scale: .18, x: () => sourcePoint().x, y: () => sourcePoint().y }, { autoAlpha: 1, scale: 1, duration: .16, ease: 'sine.out' }, Math.max(0, at - .08))
         activeTimeline.from(item, {
           x: `+=${origin.left + origin.width / 2 - target.left - target.width / 2}`,
           y: `+=${origin.top + origin.height / 2 - target.top - target.height / 2}`,
@@ -73,22 +67,20 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
           onUpdate: track,
         }, at)
         const returnFlight = { progress: 0 }
-        let departure = { ...point }
+        let departure: { x: number; y: number } | undefined
         activeTimeline.to(returnFlight, {
           progress: 1,
           duration: .62,
           ease: 'none',
           onStart: () => {
             cancelMotionRead(readKey)
-            const rect = getMotionRect(item, true)
-            const scene = getMotionRect(page)
-            departure = { x: rect.right - scene.left + 4, y: rect.top - scene.top + 3 }
+            departure = targetPoint()
             const action = cursor.querySelector('.assembly-cursor-action')
             if (action) action.textContent = 'Back to the box'
           },
           onUpdate: () => {
             const destination = sourcePoint()
-            const position = interpolateCursor(departure, destination, returnFlight.progress)
+            const position = interpolateCursor(departure ??= targetPoint(), destination, returnFlight.progress)
             moveX(position.x)
             moveY(position.y)
           },
