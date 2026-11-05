@@ -98,7 +98,7 @@ const activityMonths = Array.from({ length: activityWeeks }, (_, week) => {
 
 function SectionHeading({ number, title, note }: { number: string; title: string; note: string }) {
   return (
-    <header className="ps-section-heading">
+    <header className="ps-section-heading assembly-scene" data-scene-name={title}>
       <div className="ps-heading-title" data-assemble="text">
         <span className="ps-section-marker" data-construction-atom aria-hidden="true"><i /><i /><i /><i /></span>
         <h2><span className="ps-section-number">{number}</span>{title}</h2>
@@ -150,12 +150,13 @@ function ActivityGrid() {
 export default function PortfolioSections() {
   return (
     <>
-      <section className="ps-section assembly-scene" id="work" data-scene-name="Selected work" aria-label="Selected work">
+      <section className="ps-section" id="work" aria-label="Selected work">
         <SectionHeading number="02" title="Selected work" note="A FEW RECENT FAVORITES" />
         <div className="ps-project-grid">
-          {[projects.slice(0, 2), projects.slice(2, 4)].map((row, rowIndex) => <div className="ps-project-row assembly-scene" data-scene-name={`Project row ${rowIndex + 1}`} key={rowIndex}>
+          {[projects.slice(0, 2), projects.slice(2, 4)].map((row, rowIndex) => <div className="ps-project-row" key={rowIndex}>
           {row.map(project => (
-            <article className={`ps-project ps-project-${project.kind}`} key={project.name} data-assemble="card">
+            <div className="ps-project-scene assembly-scene" data-scene-name={`${project.name} project`} key={project.name}>
+            <article className={`ps-project ps-project-${project.kind}`} data-assemble="card">
               <div className="ps-project-art" aria-hidden="true"><ProjectArt kind={project.kind} /><span className="ps-project-index">{project.number} / SELECTED</span><span className="ps-project-art-arrow"><ArrowUpRight size={17} strokeWidth={1.5} /></span></div>
               <div className="ps-project-body">
                 <div className="ps-project-title"><h3>{project.name}</h3><span>{project.year}</span></div>
@@ -164,32 +165,33 @@ export default function PortfolioSections() {
                 <div className="ps-project-bottom"><div className="ps-project-technologies">{project.technologies.slice(0, 2).map(technology => <span key={technology}>{technology}</span>)}</div><span className="ps-project-status">CONCEPT / {project.number}</span></div>
               </div>
             </article>
+            </div>
           ))}
           </div>)}
         </div>
-        <p className="ps-work-note" data-assemble="text"><Circle size={7} fill="currentColor" /> A selection of independent concepts & experiments.</p>
+        <div className="assembly-scene" data-scene-name="Project notes"><p className="ps-work-note" data-assemble="text"><Circle size={7} fill="currentColor" /> A selection of independent concepts & experiments.</p></div>
       </section>
 
-      <section className="ps-section assembly-scene" id="experience" data-scene-name="Experience" aria-label="Experience">
+      <section className="ps-section" id="experience" aria-label="Experience">
         <SectionHeading number="03" title="Along the way" note="EXPERIENCE" />
         <div className="ps-experience-list">
-          <article className="ps-experience" data-assemble="card"><div className="ps-company-icon ps-company-independent" data-construction-atom aria-hidden="true">am<span>✳</span></div><div className="ps-experience-main"><div className="ps-experience-topline"><h3>Independent</h3><span className="ps-current-label">NOW</span></div><p>Designer & creative developer</p><p className="ps-experience-description">Helping good people turn thoughtful ideas into digital things.</p></div><span className="ps-experience-date">2024 — Present</span></article>
-          <article className="ps-experience" data-assemble="card"><div className="ps-company-icon ps-company-studio" data-construction-atom aria-hidden="true"><span /><span /></div><div className="ps-experience-main"><div className="ps-experience-topline"><h3>Studio North</h3></div><p>Product designer</p><p className="ps-experience-description">Crafted useful, considered experiences with a small, curious team.</p></div><span className="ps-experience-date">2022 — 2024</span></article>
+          <div className="ps-experience-scene assembly-scene" data-scene-name="Independent experience"><article className="ps-experience" data-assemble="card"><div className="ps-company-icon ps-company-independent" data-construction-atom aria-hidden="true">am<span>✳</span></div><div className="ps-experience-main"><div className="ps-experience-topline"><h3>Independent</h3><span className="ps-current-label">NOW</span></div><p>Designer & creative developer</p><p className="ps-experience-description">Helping good people turn thoughtful ideas into digital things.</p></div><span className="ps-experience-date">2024 — Present</span></article></div>
+          <div className="ps-experience-scene assembly-scene" data-scene-name="Studio North experience"><article className="ps-experience" data-assemble="card"><div className="ps-company-icon ps-company-studio" data-construction-atom aria-hidden="true"><span /><span /></div><div className="ps-experience-main"><div className="ps-experience-topline"><h3>Studio North</h3></div><p>Product designer</p><p className="ps-experience-description">Crafted useful, considered experiences with a small, curious team.</p></div><span className="ps-experience-date">2022 — 2024</span></article></div>
         </div>
       </section>
 
-      <section className="ps-section assembly-scene" id="toolkit" data-scene-name="Toolkit" aria-label="Toolkit">
+      <section className="ps-section" id="toolkit" aria-label="Toolkit">
         <SectionHeading number="04" title="Tools of the trade" note="ALWAYS EXPLORING" />
-        <div className="ps-toolkit-panel" data-assemble="card">
+        <div className="assembly-scene" data-scene-name="Toolkit"><div className="ps-toolkit-panel" data-assemble="card">
           <div className="ps-toolkit-top"><div className="ps-toolkit-tabs" aria-label="Toolkit categories; all tools shown">{categories.map(item => <span className={`ps-toolkit-tab${item === 'All' ? ' is-selected' : ''}`} key={item}>{item}{item === 'All' && <span>{toolkitItems.length}</span>}</span>)}</div><span className="ps-toolkit-small-note">THE EVERYDAY STACK</span></div>
           <div className="ps-toolkit-grid" id="toolkit-results">{toolkitItems.map(tool => <div className="ps-tool" data-build-tech={tool.name} key={tool.name}><span className="ps-tool-symbol" data-tech-icon aria-hidden="true" style={{ color: tool.color }}>{tool.label}</span><span data-tech-name>{tool.name}</span><span className="ps-tool-dot" data-tech-dot aria-hidden="true" /></div>)}</div>
           <p className="ps-toolkit-note"><ArrowDown size={12} /> The best tool is the one that helps make something good.</p>
-        </div>
+        </div></div>
       </section>
 
-      <section className="ps-section assembly-scene" id="activity" data-scene-name="Activity" aria-label="Activity">
+      <section className="ps-section" id="activity" aria-label="Activity">
         <SectionHeading number="05" title="A little, every day" note="2026 / IN PROGRESS" />
-        <ActivityGrid />
+        <div className="assembly-scene" data-scene-name="Activity"><ActivityGrid /></div>
       </section>
 
       <section className="ps-contact assembly-scene" id="contact" data-scene-name="Contact" aria-label="Contact">

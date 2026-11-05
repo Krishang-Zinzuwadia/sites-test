@@ -72,6 +72,16 @@ function textLeaf(target: HTMLElement): HTMLElement {
   if (leaf) return leaf;
   return Array.from(target.querySelectorAll<HTMLElement>('span')).find(node => !node.children.length && (node.textContent?.trim().length ?? 0) > 8) ?? target;
 }
+function authoredCopy(leaf: HTMLElement): { text: string; explicitBreaks: boolean } {
+  const explicitBreaks = Boolean(leaf.querySelector('br'));
+  if (!explicitBreaks) return { text: (leaf.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 180), explicitBreaks };
+  const copy = leaf.cloneNode(true) as HTMLElement;
+  copy.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+  return {
+    text: (copy.textContent ?? '').split(/\r?\n/).map(line => line.replace(/[^\S\r\n]+/g, ' ').trim()).join('\n').trim().slice(0, 180),
+    explicitBreaks,
+  };
+}
 function createScene(scene: HTMLElement, targets: HTMLElement[], mobile: boolean): ScenePlan {
   const overlay = element('div', 'assembly-overlay'); overlay.dataset.assemblyOverlay = '';
   overlay.setAttribute('aria-hidden', 'true'); scene.append(overlay);
@@ -80,7 +90,9 @@ function createScene(scene: HTMLElement, targets: HTMLElement[], mobile: boolean
   const fontTarget = textPlans[0] ?? targetPlans[0];
   const copyTarget = textPlans.find(({ target }) => target.querySelector('p')) ?? textPlans[1] ?? textPlans[0] ?? targetPlans[0];
   const copyLeaf = textLeaf(copyTarget.target);
+  const copy = authoredCopy(copyLeaf);
   const ghost = element('div', 'assembly-type-ghost');
+  if (copy.explicitBreaks) ghost.style.whiteSpace = 'pre-line';
   const typingContent = element('span', 'assembly-typed-copy'); typingContent.dataset.typingContent = '';
   const caret = element('span', 'assembly-type-caret'); ghost.append(typingContent, caret);
   const guides = element('div', 'assembly-alignment-guides');
@@ -105,7 +117,7 @@ function createScene(scene: HTMLElement, targets: HTMLElement[], mobile: boolean
     return particle;
   });
   overlay.append(sectionOutline, guides, grid, textGuide, ghost, proof, contrast, ...Object.values(panels), ...particles, ...cursors);
-  return { scene, overlay, targets: targetPlans, cursors, panels, ghost, typingContent, caret, copyLeaf, copyTarget, copyWholeTarget: copyTarget.kind === 'text' || copyLeaf === copyTarget.target, fontTarget, guides, dimension, sectionOutline, textGuide, grid, proof, contrast, particles, sourceOrigins: new Map(), copyBox: { x: 0, y: 0, width: 0, height: 0 }, copy: (copyLeaf.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 180), fontFamily: '', mobile, intro: scene.hasAttribute('data-intro') };
+  return { scene, overlay, targets: targetPlans, cursors, panels, ghost, typingContent, caret, copyLeaf, copyTarget, copyWholeTarget: copyTarget.kind === 'text' || copyLeaf === copyTarget.target, fontTarget, guides, dimension, sectionOutline, textGuide, grid, proof, contrast, particles, sourceOrigins: new Map(), copyBox: { x: 0, y: 0, width: 0, height: 0 }, copy: copy.text, fontFamily: '', mobile, intro: scene.hasAttribute('data-intro') };
 }
 function relativeBox(target: HTMLElement, scene: HTMLElement, sceneBox: DOMRect): Box {
   const rect = target.getBoundingClientRect();
@@ -153,14 +165,36 @@ function measureScene(plan: ScenePlan) {
   invalidateMotionFrame();
 }
 const sceneUnits = 10.4;
+const viewportChrome = new WeakMap<Element, { header: HTMLElement | null; dock: HTMLElement | null }>();
+function usableViewport(scene: HTMLElement) {
+  const root = scene.closest('.site-root') ?? document.documentElement;
+  let chrome = viewportChrome.get(root);
+  if (!chrome || (chrome.header && !chrome.header.isConnected) || (chrome.dock && !chrome.dock.isConnected)) {
+    chrome = { header: root.querySelector<HTMLElement>('.site-nav'), dock: root.querySelector<HTMLElement>('.assembly-dock') };
+    viewportChrome.set(root, chrome);
+  }
+  const view = getMotionViewport(), visual = window.visualViewport;
+  const visualTop = visual?.offsetTop ?? 0, visualBottom = visualTop + (visual?.height ?? view.height);
+  // Reserve natural sticky-header height even while its box-arrival transform is
+  // in flight; that temporary visual transform must not move the scene triggers.
+  const top = visualTop + (chrome.header?.offsetHeight ?? 0) + 12;
+  const dock = chrome.dock ? getMotionRect(chrome.dock) : undefined;
+  const bottom = dock && dock.top < visualBottom && dock.bottom > top ? Math.min(visualBottom - 12, dock.top - 12) : visualBottom - 12;
+  return { top, bottom: Math.max(top + 120, bottom), height: Math.max(120, bottom - top) };
+}
+function sceneViewportLines(scene: HTMLElement, mobile: boolean) {
+  const band = usableViewport(scene);
+  return { start: band.top + band.height * (mobile ? 0.65 : 0.75), end: band.top + band.height * (mobile ? 0.4 : 0.45) };
+}
 function sourcePoint(plan: ScenePlan, at: number, live = false): Point {
   if (!live && plan.sourceOrigins.has(at)) return plan.sourceOrigins.get(at)!;
   const source = getCreationSourcePoint(plan.scene);
   if (live || plan.intro) return source;
   const scene = getMotionRect(plan.scene), view = getMotionViewport(), documentTop = scene.top + view.scrollY;
   const maxScroll = getMotionScrollLimit();
-  const start = plan.trigger?.start ?? Math.min(maxScroll, Math.max(0, documentTop - view.height * 0.95));
-  const end = plan.trigger?.end ?? Math.min(maxScroll, Math.max(start + 1, documentTop - view.height * 0.2));
+  const lines = plan.trigger ? undefined : sceneViewportLines(plan.scene, plan.mobile);
+  const start = plan.trigger?.start ?? Math.min(maxScroll, Math.max(0, documentTop - lines!.start));
+  const end = plan.trigger?.end ?? Math.min(maxScroll, Math.max(start + 1, documentTop + scene.height - lines!.end));
   // Future scenes are measured before they are on screen. Predict the scroll
   // position at this emission, rather than accidentally using mount-time scroll.
   const birthScroll = start + (end - start) * Math.min(1, Math.max(0, at / sceneUnits));
@@ -618,7 +652,12 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     });
     timeline.restart(true);
   } else {
-    plan.trigger = ScrollTrigger.create({ trigger: plan.scene, animation: timeline, start: 'clamp(top 95%)', end: 'clamp(top 20%)', scrub: 0.6, invalidateOnRefresh: true });
+    plan.trigger = ScrollTrigger.create({
+      trigger: plan.scene, animation: timeline,
+      start: () => `clamp(top ${sceneViewportLines(plan.scene, mobile).start}px)`,
+      end: () => `clamp(bottom ${sceneViewportLines(plan.scene, mobile).end}px)`,
+      scrub: 0.6, invalidateOnRefresh: true,
+    });
   }
 }
 /** Assemble natural-layout [data-assemble] children; replayKey restarts the composition. */
@@ -661,18 +700,19 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
           if (scene && !target.parentElement?.closest('[data-assemble]')) byScene.get(scene)?.targets.push(target);
         });
         const pending = new Set(records.filter(record => record.targets.length));
-        const priority = new Set<SceneRecord>();
         const initialScroll = scrollY;
         let hasObservedMovement = false;
+        let lastObservedScroll = initialScroll;
+        let movementDirection = 1;
+        const prewarmRecords: SceneRecord[] = [];
+        let prewarmStarted = false;
+        let visiblePendingCount = 0;
         let active = true;
         let focusedPlan: ScenePlan | undefined;
-        let warmRecord: SceneRecord | undefined;
         let idleHandle: number | undefined;
         let idleTimer: number | undefined;
         let idleFrame: number | undefined;
         let nearFrame: number | undefined;
-        let firstPaint: number | undefined;
-        let secondPaint: number | undefined;
         let idleBudgetStarted = 0;
         let pendingRefresh: gsap.core.Tween | undefined;
         const sizeOf = (node: HTMLElement): Size => ({ width: node.offsetWidth, height: node.offsetHeight });
@@ -694,11 +734,32 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
             if (active && !disposed) ScrollTrigger.refresh();
           });
         }) as () => void;
+        const nearestPendingRecord = (visibleOnly = false) => {
+          const band = usableViewport(element), center = (band.top + band.bottom) / 2;
+          let best: SceneRecord | undefined, bestRank = Infinity, bestDistance = Infinity;
+          if (visibleOnly) visiblePendingCount = 0;
+          for (const record of pending) {
+            if (record.building) continue;
+            const rect = getMotionRect(record.scene);
+            const visible = rect.bottom > band.top && rect.top < band.bottom;
+            if (visibleOnly && !visible) continue;
+            if (visibleOnly) visiblePendingCount++;
+            const nextUp = movementDirection < 0 ? rect.bottom <= band.top : rect.top >= band.bottom;
+            const rank = visible ? 0 : nextUp ? 1 : 2;
+            const distance = visible ? Math.abs((Math.max(rect.top, band.top) + Math.min(rect.bottom, band.bottom)) / 2 - center)
+              : nextUp ? movementDirection < 0 ? band.top - rect.bottom : rect.top - band.bottom
+                : Math.min(Math.abs(rect.top - band.bottom), Math.abs(rect.bottom - band.top));
+            if (rank < bestRank || (rank === bestRank && distance < bestDistance)) {
+              best = record; bestRank = rank; bestDistance = distance;
+            }
+          }
+          return best;
+        };
         const nextIdleRecord = () => {
-          if (warmRecord && pending.has(warmRecord)) return warmRecord;
-          if (!introFinished) return undefined;
-          for (const record of priority) if (pending.has(record)) return record;
-          return pending.values().next().value as SceneRecord | undefined;
+          while (prewarmRecords.length && !pending.has(prewarmRecords[0])) prewarmRecords.shift();
+          if (prewarmRecords.length) return prewarmRecords[0];
+          if (!introFinished && !hasObservedMovement) return undefined;
+          return nearestPendingRecord();
         };
         const runIdleBuild = (deadline?: IdleDeadline) => {
           idleHandle = undefined;
@@ -713,7 +774,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
             return;
           }
           buildRecord(record);
-          if (record === warmRecord) warmRecord = undefined;
+          if (prewarmRecords[0] === record) prewarmRecords.shift();
           idleBudgetStarted = 0;
           queueIdleBuild();
         };
@@ -737,7 +798,16 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
             const plan = createScene(record.scene, record.targets, mobile);
             record.plan = plan;
             const savedIntroProgress = introProgress;
-            plan.onIntroProgress = progress => { introProgress = progress; };
+            plan.onIntroProgress = progress => {
+              introProgress = progress;
+              if (progress >= 0.55 && !prewarmStarted && !introFinished) {
+                prewarmStarted = true;
+                // The first handoff must be ready even on a tall viewport where
+                // a later heading happens to sit closer to the visual center.
+                prewarmRecords.push(...records.slice(records.indexOf(record) + 1).filter(next => pending.has(next)).slice(0, 2));
+                queueIdleBuild();
+              }
+            };
             plan.onIntroComplete = () => {
               introFinished = true;
               queueIdleBuild();
@@ -746,7 +816,6 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
             animateScene(plan, mobile);
             plans.push(plan);
             pending.delete(record);
-            priority.delete(record);
             delete record.scene.dataset.assemblyPending;
             if (plan.intro && introFinished) {
               plan.timeline?.pause().progress(1, true);
@@ -835,27 +904,28 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
           if (!active || disposed || !pending.size) return;
           const view = getMotionViewport();
           hasObservedMovement ||= Math.abs(view.scrollY - initialScroll) > 1;
-          for (const record of Array.from(pending)) {
-            const rect = getMotionRect(record.scene);
-            if (rect.bottom > -view.height && rect.top < view.height * 2.5) priority.add(record);
-            // Actual user/camera movement cannot leave a newly visible scene blank.
-            // Off-screen skipped scenes remain pending and build before reversal.
-            if (hasObservedMovement && rect.bottom > 0 && rect.top < view.height) buildRecord(record);
+          if (hasObservedMovement) {
+            const record = nearestPendingRecord(true);
+            if (record) {
+              // Catch up one visible group per paint, never a tall-viewport batch.
+              const moreVisible = visiblePendingCount > 1;
+              buildRecord(record);
+              if (moreVisible) nearFrame = requestAnimationFrame(scanNearby);
+            }
           }
           queueIdleBuild();
         };
         const scheduleNearScan = () => {
           hasObservedMovement ||= Math.abs(scrollY - initialScroll) > 1;
+          const delta = scrollY - lastObservedScroll;
+          if (Math.abs(delta) > 0.5) movementDirection = delta < 0 ? -1 : 1;
+          lastObservedScroll = scrollY;
           if (!active || nearFrame !== undefined) return;
           nearFrame = requestAnimationFrame(scanNearby);
         };
         window.addEventListener('scroll', scheduleNearScan, { passive: true });
         const intersectionObserver = typeof IntersectionObserver === 'undefined' ? undefined : new IntersectionObserver(entries => {
-          entries.forEach(entry => {
-            const record = byScene.get(entry.target as HTMLElement);
-            if (record && entry.isIntersecting && pending.has(record)) priority.add(record);
-          });
-          queueIdleBuild();
+          if (entries.some(entry => entry.isIntersecting)) queueIdleBuild();
         }, { rootMargin: '120% 0px 180% 0px' });
         pending.forEach(record => intersectionObserver?.observe(record.scene));
 
@@ -864,20 +934,6 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
         else introFinished = true;
         // Retained focus survives a media rebuild without another focusin event.
         revealFocusedTarget(document.activeElement);
-        firstPaint = requestAnimationFrame(() => {
-          firstPaint = undefined;
-          secondPaint = requestAnimationFrame(() => {
-            secondPaint = undefined;
-            if (!active) return;
-            const view = getMotionViewport();
-            warmRecord = Array.from(pending).find(record => {
-              const rect = getMotionRect(record.scene);
-              return rect.bottom > 0 && rect.top < view.height + 64;
-            });
-            queueIdleBuild();
-            if (Math.abs(view.scrollY - initialScroll) > 1) scheduleNearScan();
-          });
-        });
         document.fonts?.ready.then(() => {
           if (!active || disposed) return;
           let changed = false;
@@ -898,7 +954,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
           active = false;
           if (idleHandle !== undefined) window.cancelIdleCallback(idleHandle);
           if (idleTimer !== undefined) clearTimeout(idleTimer);
-          for (const frame of [idleFrame, nearFrame, firstPaint, secondPaint]) if (frame !== undefined) cancelAnimationFrame(frame);
+          for (const frame of [idleFrame, nearFrame]) if (frame !== undefined) cancelAnimationFrame(frame);
           pendingRefresh?.kill();
           intersectionObserver?.disconnect();
           records.forEach(record => {

@@ -17,5 +17,8 @@ html.auto-tour-running{scroll-behavior:auto}.site-root[data-stage=loading] [data
 .site-nav nav>span{font-size:12px;color:var(--muted);position:relative}.site-nav nav>span.active{color:var(--text)}.site-nav nav>span.active:after{content:'';position:absolute;left:50%;bottom:-10px;width:3px;height:3px;border-radius:50%;background:var(--coral)}.nav-contact:hover{background:transparent;color:inherit}.contact-display{display:flex;align-items:center;gap:7px}.craft-note{font:7px var(--mono);color:#8c9780;letter-spacing:.5px}@media(max-width:520px){.site-nav nav>span{font-size:10px}.craft-note{font-size:6px}}
 
 .site-root[data-stage=loading] [data-assemble]{opacity:0;visibility:hidden}
+.hero-profile-scene,.contact-strip-scene{display:flow-root}.about-heading-scene,.about-copy-scene{min-width:0}
+.portfolio-shell{padding-bottom:max(140px,58vh);padding-bottom:max(140px,58dvh)}
+@media(max-height:500px) and (orientation:landscape){.canvas-meta{margin-top:18px;margin-bottom:12px}.hero-banner{height:clamp(60px,calc(100svh - 204px),190px)}}
 
 .chrome-construction-overlay{z-index:80}

@@ -127,26 +127,38 @@ function App() {
 
       <main id="main" className="portfolio-shell">
         <div className="canvas-meta" id="top" data-box-arrival><span><span className="status-dot" /> OPEN TO GOOD CONVERSATIONS</span><span className="meta-right">A PERSONAL SPACE, IN PROGRESS</span></div>
-        <section className="hero assembly-scene" data-intro data-scene-name="Profile" aria-labelledby="profile-name">
+        <section className="hero" aria-labelledby="profile-name">
+          <div className="hero-banner-scene assembly-scene" data-intro data-scene-name="Studio">
           <div className="hero-banner" data-assemble="art">
             <MemoHeroArt />
             <div className="banner-caption"><span>A LITTLE WORLD OF MY OWN</span><span>EST. 2000 ↗</span></div>
           </div>
+          </div>
+          <div className="hero-profile-scene assembly-scene" data-scene-name="Profile">
           <div className="identity-row" data-assemble="card">
             <div className="profile-avatar" data-construction-atom><MemoAvatarArt /></div>
             <div className="profile-title"><div className="profile-eyebrow">DESIGNER <span>×</span> DEVELOPER</div><h1 id="profile-name">Alex Morgan<span className="name-period">.</span></h1><p>Thoughtful interfaces. A little unexpected.</p></div>
             <div className="profile-location"><span className="location-orbit">◎</span><span>BASED ON EARTH<br /><LocalClock /></span></div>
           </div>
           <div className="hero-footnote" data-assemble="text"><span className="tiny-cross">✳</span><span>Good work is never made alone.<br /><span className="muted">Sit back. Watch a little world come together.</span></span><ArrowDown className="scroll-arrow" size={18} /></div>
+          </div>
         </section>
 
-        <section className="about-section assembly-scene" id="about" data-scene-name="About" aria-labelledby="about-heading">
+        <section className="about-section" id="about" aria-labelledby="about-heading">
+          <div className="assembly-scene" data-scene-name="Introduction">
           <div className="section-label" data-assemble="line"><span className="section-index">01 / A LITTLE INTRODUCTION</span><span className="section-cross">+</span></div>
-          <div className="about-grid">
-            <h2 id="about-heading" data-assemble="text">A curious mind.<br />A maker at heart<span className="coral">.</span></h2>
-            <div className="about-copy" data-assemble="text"><p>I’m Alex, a designer who codes and a developer who cares about how things feel.</p><p>I turn messy ideas into considered digital experiences. Somewhere between a sketch and a shipped product is my favorite place to be.</p><div className="currently"><span className="status-dot" /><span>Currently exploring creative development<br /><span className="muted">and the small details that make the difference.</span></span></div></div>
           </div>
+          <div className="about-grid">
+            <div className="about-heading-scene assembly-scene" data-scene-name="A maker at heart">
+            <h2 id="about-heading" data-assemble="text">A curious mind.<br />A maker at heart<span className="coral">.</span></h2>
+            </div>
+            <div className="about-copy-scene assembly-scene" data-scene-name="About">
+            <div className="about-copy" data-assemble="text"><p>I’m Alex, a designer who codes and a developer who cares about how things feel.</p><p>I turn messy ideas into considered digital experiences. Somewhere between a sketch and a shipped product is my favorite place to be.</p><div className="currently"><span className="status-dot" /><span>Currently exploring creative development<br /><span className="muted">and the small details that make the difference.</span></span></div></div>
+            </div>
+          </div>
+          <div className="contact-strip-scene assembly-scene" data-scene-name="Contact details">
           <div className="contact-strip" data-assemble="line"><span className="contact-display"><Mail size={14} /> hello@example.com</span><span className="craft-note">DESIGN · CODE · PLAY</span><span className="demo-label">CONCEPT PORTFOLIO · DEMO CONTENT</span></div>
+          </div>
         </section>
         <MemoPortfolioSections />
       </main>
