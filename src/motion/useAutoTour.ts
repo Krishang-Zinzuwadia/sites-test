@@ -60,6 +60,8 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
     if (!enabled || !introDone || !requested || complete) return
     let previous = 0
     let position = window.scrollY
+    let velocity = Math.max(66, Math.min(90, innerHeight * .08))
+    const toolkit = document.getElementById('toolkit')
     document.documentElement.classList.add('auto-tour-running')
     const advance = (now: number) => {
       const elapsed = previous ? Math.min((now - previous) / 1000, .05) : 0
@@ -69,11 +71,15 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
         return
       }
       const end = Math.max(0, document.documentElement.scrollHeight - innerHeight)
-      const speed = Math.max(66, Math.min(90, innerHeight * .08))
-      position = Math.min(end, position + speed * elapsed)
+      const toolRect = toolkit?.getBoundingClientRect()
+      const inspectingTools = toolRect && toolRect.top < innerHeight && toolRect.bottom > innerHeight * .2
+      const desiredSpeed = inspectingTools ? 42 : Math.max(66, Math.min(90, innerHeight * .08))
+      velocity += (desiredSpeed - velocity) * Math.min(1, elapsed * 3)
+      position = Math.min(end, position + velocity * elapsed)
       window.scrollTo({ top: position, behavior: 'instant' })
       if (position >= end - 1) {
         setComplete(true)
+        document.dispatchEvent(new CustomEvent('assembly:tour-complete'))
         return
       }
       frame.current = requestAnimationFrame(advance)

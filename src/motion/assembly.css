@@ -250,6 +250,16 @@
   white-space: nowrap;
 }
 
+.assembly-inspector-blocked {
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+.assembly-cursor[data-edge='right'] .assembly-cursor-name,
+.assembly-cursor[data-edge='right'] .assembly-cursor-action { left: auto; right: 3px; }
+.assembly-cursor[data-vertical='above'] .assembly-cursor-name { top: -20px; }
+.assembly-cursor[data-vertical='above'] .assembly-cursor-action { top: -41px; }
+
 @media (max-width: 767px) {
   .assembly-cursor-name { font-size: 9px; padding: 3px 6px; }
   .assembly-selection { inset: -2px; }

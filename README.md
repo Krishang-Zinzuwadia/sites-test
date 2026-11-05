@@ -17,7 +17,8 @@ The development server starts at http://localhost:5173. `npm run build` creates 
 
 - A box-shaped opening sequence fills, bursts open and becomes the source of the page's elements.
 - The page automatically scrolls through the construction sequence. Pause/resume and replay controls remain available; manual wheel, touch and keyboard input let the visitor take over.
-- Collaborators work in pairs on frames, text boxes, copy, typography, colors, components and alignment. Additional builders individually author labels, headings, paragraphs, icons and illustration assets. Elements emerge from the source box with small geometric bursts before settling into the finished layout.
+- Collaborators work in pairs on frames, text boxes, copy, typography, colors, components and alignment. Each crew emerges from the idea box, travels between assignments, and returns to the box when finished. Images are inserted in place with a simulated right-click and Paste selection.
+- Every technology chip is built as a background, pasted icon, and written label. A painting crew draws and colors each demonstration activity cell individually. Decorative menus follow the cursor action that opens them and stay within the viewport.
 - The project grid assembles one row at a time. Projects, toolkit and demonstration activity are a passive canvas; the simulated collaborators do the editing.
 - The bottom dock pauses/resumes the automatic tour, replays the composition, switches motion off/on, and reports scroll progress.
 - OS reduced-motion preference shows the completed layout immediately. Normal text and links remain semantic HTML.

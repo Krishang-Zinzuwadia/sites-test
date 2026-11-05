@@ -115,13 +115,13 @@ function ActivityGrid() {
         <p><strong>{activityTotal.toLocaleString('en')}</strong> little steps forward</p>
         <span className="ps-demo-label"><span />Demo activity</span>
       </div>
-      <div className="ps-activity-chart" data-construction-atom>
+      <div className="ps-activity-chart">
         <div className="ps-activity-months" aria-hidden="true">
           {activityMonths.map(month => <span key={month.week} style={{ gridColumn: month.week + 1 }}>{month.name}</span>)}
         </div>
         <div className="ps-activity-body">
           <div className="ps-activity-weekdays" aria-hidden="true"><span>Mon</span><span>Wed</span><span>Fri</span></div>
-          <div className="ps-activity-grid" role="img" aria-label={`Demo activity for 2026, showing ${activityTotal} fictional explorations across 44 weeks.`}>
+          <div className="ps-activity-grid" data-build-grid role="img" aria-label={`Demo activity for 2026, showing ${activityTotal} fictional explorations across 44 weeks.`}>
             {Array.from({ length: 7 }, (_, row) => (
               <div className="ps-activity-row" key={row} aria-hidden="true">
                 {Array.from({ length: activityWeeks }, (_, week) => {
@@ -129,6 +129,8 @@ function ActivityGrid() {
                   const day = activity[index]
                   return <span
                     key={day.date}
+                    data-build-cell={index}
+                    data-build-level={day.level}
                     className={`ps-activity-day ps-activity-level-${day.level}${day.future ? ' ps-activity-future' : ''}`}
                   />
                 })}
@@ -180,7 +182,7 @@ export default function PortfolioSections() {
         <SectionHeading number="04" title="Tools of the trade" note="ALWAYS EXPLORING" />
         <div className="ps-toolkit-panel" data-assemble="card">
           <div className="ps-toolkit-top"><div className="ps-toolkit-tabs" aria-label="Toolkit categories; all tools shown">{categories.map(item => <span className={`ps-toolkit-tab${item === 'All' ? ' is-selected' : ''}`} key={item}>{item}{item === 'All' && <span>{toolkitItems.length}</span>}</span>)}</div><span className="ps-toolkit-small-note">THE EVERYDAY STACK</span></div>
-          <div className="ps-toolkit-grid" id="toolkit-results">{toolkitItems.map(tool => <div className="ps-tool" data-construction-atom key={tool.name}><span className="ps-tool-symbol" aria-hidden="true" style={{ color: tool.color }}>{tool.label}</span><span>{tool.name}</span><span className="ps-tool-dot" aria-hidden="true" /></div>)}</div>
+          <div className="ps-toolkit-grid" id="toolkit-results">{toolkitItems.map(tool => <div className="ps-tool" data-build-tech={tool.name} key={tool.name}><span className="ps-tool-symbol" data-tech-icon aria-hidden="true" style={{ color: tool.color }}>{tool.label}</span><span data-tech-name>{tool.name}</span><span className="ps-tool-dot" data-tech-dot aria-hidden="true" /></div>)}</div>
           <p className="ps-toolkit-note"><ArrowDown size={12} /> The best tool is the one that helps make something good.</p>
         </div>
       </section>

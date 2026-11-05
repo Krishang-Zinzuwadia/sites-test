@@ -139,7 +139,7 @@ function measureScene(plan: ScenePlan) {
     else target.style.removeProperty('transform');
   });
 }
-const sceneUnits = 5.87;
+const sceneUnits = 10.4;
 function sourcePoint(plan: ScenePlan, at: number, live = false): Point {
   if (!live && plan.sourceOrigins.has(at)) return plan.sourceOrigins.get(at)!;
   const source = document.querySelector<HTMLElement>('[data-creation-source]')?.getBoundingClientRect();
@@ -159,7 +159,13 @@ function sourceMotion(plan: ScenePlan, target: TargetPlan, at: number): Motion {
   return { ...target.motion, x: source.x - target.box.x - target.box.width / 2, y: source.y - target.box.y - target.box.height / 2 };
 }
 function draggedPoint(plan: ScenePlan, target: TargetPlan, at: number, progress: number, cornerX: number, cornerY: number): Point {
-  const motion = sourceMotion(plan, target, at), scale = motion.scale + (1 - motion.scale) * progress;
+  const motion = sourceMotion(plan, target, at);
+  if (progress === 0 && !plan.sourceOrigins.has(at)) {
+    const live = sourcePoint(plan, at, true);
+    motion.x = live.x - target.box.x - target.box.width / 2;
+    motion.y = live.y - target.box.y - target.box.height / 2;
+  }
+  const scale = motion.scale + (1 - motion.scale) * progress;
   const angle = motion.rotation * (1 - progress) * Math.PI / 180;
   const localX = (cornerX - 0.5) * target.box.width * scale, localY = (cornerY - 0.5) * target.box.height * scale;
   return { x: target.box.x + target.box.width / 2 + motion.x * (1 - progress) + localX * Math.cos(angle) - localY * Math.sin(angle), y: target.box.y + target.box.height / 2 + motion.y * (1 - progress) + localX * Math.sin(angle) + localY * Math.cos(angle) };
@@ -171,7 +177,7 @@ function optionPoint(plan: ScenePlan, kind: ToolKind, choice: string): Point {
   return { x: rect.left - scene.left + rect.width * 0.55, y: rect.top - scene.top + rect.height * 0.55 };
 }
 function animateScene(plan: ScenePlan, mobile: boolean) {
-  const timeline = gsap.timeline({ paused: true }); plan.timeline = timeline;
+  const timeline = gsap.timeline({ paused: true, delay: plan.intro ? 5.8 : 0 }); plan.timeline = timeline;
   const [mia, noah, leo, ava, eli, you, finn, iris, sam, zoe, remy, kai] = plan.cursors;
   const first = plan.targets[0], component = plan.targets.find(({ kind }) => kind === 'art' || kind === 'card') ?? first;
   const alignTarget = plan.targets.find(({ kind }) => kind === 'card') ?? component;
@@ -179,17 +185,70 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     if (plan.trigger?.direction === -1) { plan.sourceOrigins.delete(at); return; }
     if (!plan.sourceOrigins.has(at)) plan.sourceOrigins.set(at, sourcePoint(plan, at, true));
   }, [], at);
-  const approach = (cursor: HTMLElement, getPoint: () => Point, start: number, fromRight = false) => {
-    timeline.fromTo(cursor, { autoAlpha: 0, x: () => sourcePoint(plan, start).x + (fromRight ? 4 : -4), y: () => sourcePoint(plan, start).y - 4 }, { autoAlpha: 1, x: () => getPoint().x, y: () => getPoint().y, duration: 0.23, ease: 'power2.out' }, start);
+  const curve = (cursor: HTMLElement, destination: () => Point, start: number, duration: number, mode: 'travel' | 'birth' | 'return' = 'travel', side = 1) => {
+    const progress = { value: 0 };
+    let origin: Point | undefined;
+    const setX = gsap.quickSetter(cursor, 'x', 'px'), setY = gsap.quickSetter(cursor, 'y', 'px'), setScale = gsap.quickSetter(cursor, 'scale');
+    timeline.call(() => {
+      if (mode === 'birth') {
+        origin = sourcePoint(plan, start, true);
+        gsap.set(cursor, { x: origin.x, y: origin.y, scale: 0.15, autoAlpha: 1 });
+      } else if (!origin || plan.trigger?.direction !== -1) {
+        origin = { x: Number(gsap.getProperty(cursor, 'x')), y: Number(gsap.getProperty(cursor, 'y')) };
+      }
+    }, [], start);
+    timeline.fromTo(progress, { value: 0 }, { value: 1, duration, ease: 'power1.inOut', immediateRender: false, onUpdate: () => {
+      const from = origin ?? sourcePoint(plan, start, true), to = destination(), p = progress.value;
+      const distance = Math.hypot(to.x - from.x, to.y - from.y);
+      const bend = Math.min(74, Math.max(8, distance * 0.14));
+      const control = { x: (from.x + to.x) / 2 + bend * 0.35 * side, y: (from.y + to.y) / 2 - bend };
+      setX((1 - p) ** 2 * from.x + 2 * (1 - p) * p * control.x + p * p * to.x);
+      setY((1 - p) ** 2 * from.y + 2 * (1 - p) * p * control.y + p * p * to.y);
+      if (mode === 'birth') setScale(0.15 + 0.85 * Math.min(1, p * 4));
+      if (mode === 'return') setScale(1 - 0.86 * Math.max(0, (p - 0.76) / 0.24));
+    } }, start);
+    if (mode === 'return') timeline.set(cursor, { autoAlpha: 0 }, start + duration);
   };
-  const move = (cursor: HTMLElement, getPoint: () => Point, start: number, duration = 0.28) => timeline.to(cursor, { x: () => getPoint().x, y: () => getPoint().y, duration, ease: 'power2.inOut' }, start);
-  const depart = (cursor: HTMLElement, getPoint: () => Point, start: number) => timeline.to(cursor, { autoAlpha: 0, x: () => getPoint().x + 34, y: () => getPoint().y - 30, duration: 0.24, ease: 'power2.in' }, start);
+  const approach = (cursor: HTMLElement, getPoint: () => Point, start: number, fromRight = false) => curve(cursor, getPoint, start, 0.23, 'birth', fromRight ? -1 : 1);
+  const move = (cursor: HTMLElement, getPoint: () => Point, start: number, duration = 0.28) => curve(cursor, getPoint, start, duration);
+  const depart = (cursor: HTMLElement, _getPoint: () => Point, start: number) => curve(cursor, () => sourcePoint(plan, start, true), start, 0.65, 'return');
+  const menuOwners: Record<ToolKind, HTMLDivElement> = { layout: mia, text: noah, font: noah, color: ava, spacing: eli };
+  const menuAnchors = new Map<ToolKind, Point>();
+  const placePanel = (kind: ToolKind, capture = false) => {
+    const node = plan.panels[kind], owner = menuOwners[kind], host = plan.scene.getBoundingClientRect();
+    if (capture || !menuAnchors.has(kind)) menuAnchors.set(kind, { x: Number(gsap.getProperty(owner, 'x')), y: Number(gsap.getProperty(owner, 'y')) });
+    const anchor = menuAnchors.get(kind)!, width = node.offsetWidth, height = node.offsetHeight;
+    const clampX = (x: number) => Math.max(8, Math.min(innerWidth - width - 8, x));
+    const clampY = (y: number) => Math.max(10, Math.min(innerHeight - height - (mobile ? 83 : 20), y));
+    const anchorX = host.left + anchor.x, anchorY = host.top + anchor.y;
+    const others = Array.from(document.querySelectorAll<HTMLElement>('[data-construction-menu]')).filter(other => other !== node && getComputedStyle(other).visibility !== 'hidden' && Number(getComputedStyle(other).opacity) > 0.1).map(other => other.getBoundingClientRect());
+    const candidates = [
+      { x: anchorX + 14, y: anchorY + 12 }, { x: anchorX - width - 14, y: anchorY + 12 },
+      { x: anchorX + 14, y: anchorY - height - 12 }, { x: anchorX - width - 14, y: anchorY - height - 12 },
+      { x: anchorX + 14, y: anchorY + height + 24 }, { x: anchorX - width - 14, y: anchorY - height * 2 - 24 },
+    ].map(candidate => ({ x: clampX(candidate.x), y: clampY(candidate.y) }));
+    const overlap = (candidate: Point) => others.reduce((area, rect) => area + Math.max(0, Math.min(candidate.x + width + 8, rect.right) - Math.max(candidate.x - 8, rect.left)) * Math.max(0, Math.min(candidate.y + height + 8, rect.bottom) - Math.max(candidate.y - 8, rect.top)), 0);
+    const chosen = candidates.reduce((best, candidate) => overlap(candidate) < overlap(best) ? candidate : best);
+    Object.assign(node.style, { left: `${chosen.x - host.left}px`, top: `${chosen.y - host.top}px` });
+  };
+  const menuClose = (node: HTMLElement) => { node.dataset.open = 'false'; node.classList.add('assembly-inspector-blocked'); };
   const panel = (kind: ToolKind, start: number, end: number) => {
-    captureOrigin(start);
     const node = plan.panels[kind];
-    gsap.set(node, { transformOrigin: '50% 50%' });
-    timeline.fromTo(node, { autoAlpha: 0, x: () => sourcePoint(plan, start).x - parseFloat(node.style.left) - node.offsetWidth / 2, y: () => sourcePoint(plan, start).y - parseFloat(node.style.top) - node.offsetHeight / 2, scale: 0.025 }, { autoAlpha: 1, x: 0, y: 0, scale: 1, duration: 0.24, ease: 'power2.out', immediateRender: false }, start);
-    timeline.to(plan.panels[kind], { autoAlpha: 0, y: -5, duration: 0.17 }, end);
+    node.dataset.constructionMenu = kind;
+    gsap.set(node, { transformOrigin: '12px 12px' });
+    timeline.call(() => {
+      if (plan.trigger?.direction === -1) { menuClose(node); return; }
+      placePanel(kind, true);
+      node.classList.remove('assembly-inspector-blocked'); node.dataset.open = 'true';
+      document.dispatchEvent(new CustomEvent('assembly:menu-open', { detail: { menu: node, owner: plan.scene } }));
+    }, [], start);
+    timeline.fromTo(node, { autoAlpha: 0, x: 0, y: 5, scale: 0.95 }, { autoAlpha: 1, x: 0, y: 0, scale: 1, duration: 0.15, ease: 'power2.out', immediateRender: false }, start);
+    timeline.to(node, { autoAlpha: 0, scale: 0.98, duration: 0.08 }, end);
+    timeline.call(() => {
+      if (plan.trigger?.direction === -1) { node.classList.remove('assembly-inspector-blocked'); node.dataset.open = 'true'; }
+      else menuClose(node);
+      document.dispatchEvent(new CustomEvent('assembly:menu-close', { detail: { menu: node, owner: plan.scene } }));
+    }, [], end + 0.08);
   };
   let burstIndex = 0;
   const burst = (at: number, target: TargetPlan, targetIndex: number) => {
@@ -224,10 +283,19 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     timeline.fromTo(option, { backgroundColor: 'rgba(168,201,154,0)', boxShadow: 'inset 0 0 0 1px rgba(168,201,154,0)' }, { backgroundColor: 'rgba(168,201,154,.19)', boxShadow: 'inset 0 0 0 1px rgba(168,201,154,.8)', duration: 0.13 }, start);
     timeline.to(option, { scale: 0.96, duration: 0.07, yoyo: true, repeat: 1 }, start);
   };
+  const inspect = (kind: ToolKind, owner: HTMLElement, anchor: () => Point, open: number, close: number, choices: { choice: string; at: number }[], approachDuration = 0.24) => {
+    if (approachDuration > 0) move(owner, anchor, open - approachDuration, approachDuration);
+    timeline.to(owner, { scale: 0.86, duration: 0.045, yoyo: true, repeat: 1 }, open - 0.09);
+    panel(kind, open, close);
+    choices.forEach(({ choice, at }) => {
+      move(owner, () => optionPoint(plan, kind, choice), at - 0.14, 0.14);
+      choose(kind, choice, at);
+    });
+  };
 
   // Mia establishes actual empty frame bounds before anybody places content.
-  approach(mia, () => sourcePoint(plan, 0.24), 0.01);
-  approach(finn, () => sourcePoint(plan, 0.24), 0.01, true);
+  approach(mia, () => sourcePoint(plan, 0.24, true), 0.01);
+  approach(finn, () => sourcePoint(plan, 0.24, true), 0.01, true);
   captureOrigin(0.22);
   timeline.fromTo(plan.sectionOutline, { autoAlpha: 0, x: () => sourcePoint(plan, 0.22).x - plan.scene.clientWidth / 2, y: () => sourcePoint(plan, 0.22).y - plan.scene.offsetHeight / 2, scale: 0.025, clipPath: 'inset(0 100% 100% 0)' }, { autoAlpha: 1, x: 0, y: 0, scale: 1, clipPath: 'inset(0 0% 0% 0)', duration: 0.8, immediateRender: false }, 0.22);
   plan.targets.forEach((target, index) => {
@@ -238,10 +306,9 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     burst(at, target, index);
   });
   trackPair(mia, finn, first, 0.24, 0.55);
-  move(mia, () => point(first, 1, 0), 0.8, 0.24); move(finn, () => point(first, 0, 1), 0.8, 0.24);
-  move(mia, () => point(first, 1, 1), 1.04, 0.24); move(finn, () => point(first, 0, 0), 1.04, 0.24);
-  move(mia, () => point(first, 0, 1), 1.28, 0.24); move(finn, () => point(first, 1, 0), 1.28, 0.24);
-  panel('layout', 0.95, 3.3); move(mia, () => optionPoint(plan, 'layout', 'frame'), 1.55); choose('layout', 'frame', 1.84);
+  if (!mobile) move(mia, () => point(first, 0.75, 0), 0.8, 0.24);
+  move(finn, () => point(first, 0.25, 1), 0.8, 0.65);
+  inspect('layout', mia, () => point(first, 0.75, 0), mobile ? 0.84 : 1.08, mobile ? 1.29 : 1.62, [{ choice: 'frame', at: mobile ? 1.13 : 1.46 }], 0);
   move(mia, () => point(plan.targets[plan.targets.length - 1], 0, 1), 2.02, 1.08);
   move(finn, () => point(plan.targets[plan.targets.length - 1], 1, 0), 2.02, 1.08);
   depart(mia, () => point(plan.targets[plan.targets.length - 1], 0, 1), 3.65);
@@ -249,29 +316,29 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
 
   // Noah makes a text box, then chooses a real typeface in the properties panel.
   const fontChoice = /plex|mono/i.test(plan.fontFamily) ? 'plex' : /dm sans/i.test(plan.fontFamily) ? 'dm-sans' : 'manrope';
-  approach(noah, () => sourcePoint(plan, 0.78), 0.53, true);
-  approach(iris, () => sourcePoint(plan, 0.78), 0.53);
+  approach(noah, () => sourcePoint(plan, 0.78, true), 0.53, true);
+  approach(iris, () => sourcePoint(plan, 0.78, true), 0.53);
   captureOrigin(0.78);
   timeline.fromTo(plan.textGuide, { autoAlpha: 0, x: () => sourceMotion(plan, plan.fontTarget, 0.78).x, y: () => sourceMotion(plan, plan.fontTarget, 0.78).y, scale: 0.025, rotation: plan.fontTarget.motion.rotation }, { autoAlpha: 1, x: 0, y: 0, scale: 1, rotation: 0, duration: 0.5, ease: 'power2.inOut', immediateRender: false }, 0.78);
   trackPair(noah, iris, plan.fontTarget, 0.78, 0.5);
-  panel('text', 0.78, 1.65); move(noah, () => optionPoint(plan, 'text', 'text'), 1.28); choose('text', 'text', 1.56);
-  panel('font', 1.66, 3.7); move(noah, () => optionPoint(plan, 'font', 'plex'), 1.88); choose('font', 'plex', 2.16);
-  move(noah, () => optionPoint(plan, 'font', fontChoice), 2.28); choose('font', fontChoice, 2.56);
+  inspect('text', noah, () => point(plan.fontTarget, 0, 0), mobile ? 1.41 : 1.42, mobile ? 1.86 : 1.95, [{ choice: 'text', at: mobile ? 1.7 : 1.75 }], 0);
+  inspect('font', noah, () => point(plan.fontTarget, 0.1, 0.05), mobile ? 2.1 : 2.19, mobile ? 2.55 : 3.15,
+    mobile ? [{ choice: fontChoice, at: 2.39 }] : [{ choice: 'plex', at: 2.52 }, { choice: fontChoice, at: 2.95 }], 0.16);
   move(iris, () => point(plan.fontTarget, 1, 0), 1.5, 0.3);
   move(iris, () => point(plan.fontTarget, 1, 1), 2.58, 0.6);
   timeline.to(plan.textGuide, { autoAlpha: 0, duration: 0.2 }, 3.5);
-  depart(noah, () => optionPoint(plan, 'font', fontChoice), 3.88);
-  depart(iris, () => point(plan.fontTarget, 1, 1), 3.88);
+  depart(noah, () => optionPoint(plan, 'font', fontChoice), mobile ? 2.76 : 3.32);
+  depart(iris, () => point(plan.fontTarget, 1, 1), 3.2);
 
   // Leo types into an isolated decorative ghost. React's semantic text is untouched.
-  const copyStart = mobile ? 1.94 : 1.57, copyEnd = 3.94;
+  const copyStart = 1.98, copyEnd = 3.2;
   approach(leo, () => ({ x: plan.copyBox.x + 3, y: plan.copyBox.y + 8 }), copyStart - 0.26);
   approach(sam, () => ({ x: plan.copyBox.x + plan.copyBox.width, y: plan.copyBox.y + plan.copyBox.height }), copyStart - 0.26, true);
   captureOrigin(copyStart - 0.22);
   timeline.fromTo(plan.ghost, { autoAlpha: 0, x: () => sourcePoint(plan, copyStart - 0.22).x - plan.copyBox.x - plan.copyBox.width / 2, y: () => sourcePoint(plan, copyStart - 0.22).y - plan.copyBox.y - plan.copyBox.height / 2, scale: 0.025 }, { autoAlpha: 1, x: 0, y: 0, scale: 1, duration: 0.22, ease: 'power2.out', immediateRender: false }, copyStart - 0.22);
   timeline.fromTo(plan.caret, { opacity: 0.35 }, { opacity: 1, duration: 0.17, repeat: 9, yoyo: true, ease: 'steps(1)' }, copyStart);
   timeline.set(plan.ghost, { fontFamily: 'IBM Plex Mono, monospace' }, 1.85);
-  timeline.set(plan.ghost, { fontFamily: () => plan.fontFamily }, 2.56);
+  timeline.set(plan.ghost, { fontFamily: () => plan.fontFamily }, mobile ? 2.39 : 2.95);
   const typing = { count: 0 };
   const setCopyX = gsap.quickSetter(leo, 'x', 'px'), setCopyY = gsap.quickSetter(leo, 'y', 'px');
   timeline.fromTo(typing, { count: 0 }, { count: plan.copy.length, duration: copyEnd - copyStart, ease: `steps(${Math.max(1, plan.copy.length)})`, onUpdate: () => {
@@ -282,14 +349,14 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   timeline.to(plan.ghost, { autoAlpha: 0, duration: 0.18 }, copyEnd + 0.12);
   move(sam, () => ({ x: plan.copyBox.x + 8, y: plan.copyBox.y + plan.copyBox.height }), copyStart + 0.1, copyEnd - copyStart - 0.1);
   timeline.fromTo(plan.proof, { autoAlpha: 0, y: 4 }, { autoAlpha: 1, y: 0, duration: 0.15 }, copyEnd);
-  timeline.to(plan.proof, { autoAlpha: 0, duration: 0.16 }, 4.5);
+  timeline.to(plan.proof, { autoAlpha: 0, duration: 0.16 }, 3.5);
   if (!plan.copyWholeTarget) {
     // A card's artwork and shell can be placed while its copy is still being
     // written. Only conceal the corresponding leaf, never the entire card.
     timeline.fromTo(plan.copyLeaf, { opacity: 0 }, { opacity: 1, duration: 0.18 }, copyEnd + 0.02);
   }
-  depart(leo, () => ({ x: Math.min(plan.scene.clientWidth - 75, plan.copyBox.x + plan.copyBox.width), y: plan.copyBox.y + plan.copyBox.height }), 4.25);
-  depart(sam, () => ({ x: plan.copyBox.x + 8, y: plan.copyBox.y + plan.copyBox.height }), 4.5);
+  depart(leo, () => ({ x: Math.min(plan.scene.clientWidth - 75, plan.copyBox.x + plan.copyBox.width), y: plan.copyBox.y + plan.copyBox.height }), 3.36);
+  depart(sam, () => ({ x: plan.copyBox.x + 8, y: plan.copyBox.y + plan.copyBox.height }), 3.36);
 
   // You place the actual components into Mia's finished frames.
   const componentStart = mobile ? 2.12 : 1.65;
@@ -340,19 +407,18 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   depart(kai, () => point(alignTarget, 1, 1), 4.65);
 
   // Ava tries a palette and applies it to a real accent, preserving its final color.
-  const colorStart = mobile ? 3.27 : 2.28;
+  const colorStart = mobile ? 2.64 : 2.42;
   const accent = plan.scene.querySelector<HTMLElement>('[data-color-target], .coral, .name-period, .ps-section-number') ?? textLeaf(plan.fontTarget.target);
   const finalColor = getComputedStyle(accent).color;
   const rgb = (finalColor.match(/[\d.]+/g) ?? ['168', '201', '154']).slice(0, 3).map(Number);
   const palette = [{ choice: 'sage', rgb: [168, 201, 154] }, { choice: 'coral', rgb: [241, 135, 102] }, { choice: 'cream', rgb: [237, 236, 229] }, { choice: 'lavender', rgb: [183, 160, 236] }];
   const colorChoice = palette.reduce((best, swatch) => swatch.rgb.reduce((sum, value, i) => sum + (value - rgb[i]) ** 2, 0) < best.rgb.reduce((sum, value, i) => sum + (value - rgb[i]) ** 2, 0) ? swatch : best).choice;
-  approach(ava, () => point(component, 0.88, 0.12), colorStart - 0.22, true);
-  approach(zoe, () => point(component, 0, 1), colorStart - 0.22);
-  panel('color', colorStart, mobile ? 4.3 : 4.45);
-  move(ava, () => optionPoint(plan, 'color', 'lavender'), colorStart + 0.2); choose('color', 'lavender', colorStart + 0.46);
-  move(ava, () => optionPoint(plan, 'color', colorChoice), colorStart + 0.64); choose('color', colorChoice, colorStart + 0.91);
-  timeline.fromTo(accent, { color: '#b7a0ec' }, { color: finalColor, duration: 0.55 }, colorStart + 0.55);
-  timeline.fromTo(component.target, { filter: 'hue-rotate(22deg) saturate(.7)' }, { filter: 'hue-rotate(0deg) saturate(1)', duration: 0.65, immediateRender: false }, colorStart + 0.5);
+  approach(ava, () => point(component, 0.88, 0.12), colorStart - 0.25, true);
+  approach(zoe, () => point(component, 0, 1), colorStart - 0.25);
+  inspect('color', ava, () => point(component, 0.88, 0.12), colorStart, mobile ? 3.12 : 3.38,
+    mobile ? [{ choice: colorChoice, at: 2.96 }] : [{ choice: 'lavender', at: 2.75 }, { choice: colorChoice, at: 3.18 }], 0);
+  timeline.fromTo(accent, { color: '#b7a0ec' }, { color: finalColor, duration: 0.28 }, mobile ? 2.96 : 3.18);
+  timeline.fromTo(component.target, { filter: 'hue-rotate(22deg) saturate(.7)' }, { filter: 'hue-rotate(0deg) saturate(1)', duration: 0.35, immediateRender: false }, mobile ? 2.96 : 3.18);
   move(zoe, () => point(component, 0, 0), colorStart + 0.2, 0.55);
   timeline.fromTo(plan.contrast, { autoAlpha: 0, y: 5 }, { autoAlpha: 1, y: 0, duration: 0.18 }, colorStart + 0.75);
   timeline.to(plan.contrast, { autoAlpha: 0, duration: 0.18 }, 4.6);
@@ -360,17 +426,15 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   depart(zoe, () => point(component, 0, 0), 4.7);
 
   // Eli finishes with visible alignment axes, a measured gap, and a small snap.
-  const alignStart = mobile ? 3.5 : 3.12;
+  const alignStart = 3.24;
   approach(eli, () => point(alignTarget, 0, 0.5), alignStart - 0.24);
   approach(remy, () => point(alignTarget, 1, 0.5), alignStart - 0.24, true);
-  panel('spacing', alignStart, 5.22);
+  inspect('spacing', eli, () => point(alignTarget, 0, 0.5), alignStart, 3.92, [{ choice: 'left', at: 3.53 }, { choice: 'gap16', at: 3.76 }], 0);
   timeline.fromTo(plan.guides, { autoAlpha: 0, scaleX: 0.4 }, { autoAlpha: 1, scaleX: 1, duration: 0.25 }, alignStart);
   timeline.fromTo(plan.grid, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.25 }, alignStart);
-  move(eli, () => optionPoint(plan, 'spacing', 'left'), alignStart + 0.2); choose('spacing', 'left', alignStart + 0.46);
-  move(eli, () => optionPoint(plan, 'spacing', 'gap16'), alignStart + 0.59); choose('spacing', 'gap16', alignStart + 0.86);
   const snapAt = alignStart + 1.2, snap = mobile ? 5 : 10;
-  move(eli, () => point(alignTarget, 0, 0), alignStart + 0.96, 0.24);
-  move(remy, () => point(alignTarget, 1, 1), alignStart + 0.96, 0.24);
+  move(eli, () => point(alignTarget, 0, 0), 4.0, 0.44);
+  move(remy, () => point(alignTarget, 1, 1), 4.0, 0.44);
   timeline.fromTo([alignTarget.target, alignTarget.shell], { x: snap }, { x: 0, duration: 0.35, ease: 'power2.out', immediateRender: false }, snapAt);
   [eli, remy].forEach((cursor, index) => timeline.fromTo(cursor, { x: () => point(alignTarget, index, index).x + snap, y: () => point(alignTarget, index, index).y }, { x: () => point(alignTarget, index, index).x, duration: 0.35, ease: 'power2.out', immediateRender: false }, snapAt));
   move(eli, () => point(alignTarget, 0, 1), Math.max(4.92, snapAt + 0.4), 0.28);
@@ -380,21 +444,36 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   timeline.to(plan.sectionOutline, { autoAlpha: 0, duration: 0.2 }, 5.35);
   depart(eli, () => point(alignTarget, 0, 1), 5.48);
   depart(remy, () => point(alignTarget, 1, 0), 5.48);
-  timeline.to({}, { duration: 0.15 }, 5.72);
+  timeline.to({}, { duration: 0.1 }, 10.3);
   plan.constructionCleanup = addElementConstruction({
     scene: plan.scene,
     overlay: plan.overlay,
     timeline,
     targets: plan.targets.map(({ target }) => target),
     start: 4.05,
-    end: 5.62,
+    end: 9.05,
     skip: [plan.copyLeaf],
   });
-  timeline.duration(plan.intro ? 5.2 : 6);
+  timeline.duration(plan.intro ? 9 : 10);
   timeline.eventCallback('onUpdate', () => {
     if (plan.intro) plan.onIntroProgress?.(timeline.progress());
     // Keep action pills on the canvas side of the pointer on a narrow viewport.
-    if (mobile) plan.cursors.forEach(cursor => { cursor.dataset.edge = Number(gsap.getProperty(cursor, 'x')) > plan.scene.clientWidth - 145 ? 'right' : 'left'; });
+    const host = plan.scene.getBoundingClientRect();
+    plan.cursors.forEach(cursor => {
+      const x = Number(gsap.getProperty(cursor, 'x')), y = Number(gsap.getProperty(cursor, 'y'));
+      cursor.dataset.edge = host.left + x > innerWidth - 145 ? 'right' : 'left';
+      cursor.dataset.vertical = host.top + y > innerHeight - 78 ? 'above' : 'below';
+    });
+    // Keep an opened inspector locked to its work point, correcting only when
+    // the moving camera would otherwise carry it outside the viewport.
+    Object.values(plan.panels).forEach(node => {
+      if (node.dataset.open !== 'true') return;
+      const rect = node.getBoundingClientRect();
+      const dx = Math.max(8, Math.min(innerWidth - rect.width - 8, rect.left)) - rect.left;
+      const dy = Math.max(10, Math.min(innerHeight - rect.height - (mobile ? 83 : 20), rect.top)) - rect.top;
+      if (dx) node.style.left = `${parseFloat(node.style.left) + dx}px`;
+      if (dy) node.style.top = `${parseFloat(node.style.top) + dy}px`;
+    });
   });
   if (plan.intro) {
     timeline.eventCallback('onComplete', () => {
@@ -403,7 +482,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
       plan.onIntroComplete?.();
       document.dispatchEvent(new CustomEvent('assembly:intro-complete'));
     });
-    timeline.play(0);
+    timeline.restart(true);
   } else {
     plan.trigger = ScrollTrigger.create({ trigger: plan.scene, animation: timeline, start: 'clamp(top 95%)', end: 'clamp(top 20%)', scrub: 0.6, invalidateOnRefresh: true });
   }
@@ -450,7 +529,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
             makeReadable([...plan.targets.map(({ target }) => target), plan.copyLeaf]);
             gsap.set(plan.overlay, { autoAlpha: 0 });
           } else if (plan.intro) {
-            if (savedIntroProgress > 0) plan.timeline?.progress(savedIntroProgress, false);
+            if (savedIntroProgress > 0) plan.timeline?.delay(0).progress(savedIntroProgress, false);
             if (playbackPaused) plan.timeline?.pause();
           }
           plans.push(plan);

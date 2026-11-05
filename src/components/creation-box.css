@@ -27,9 +27,13 @@
 .creation-box__label{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);white-space:nowrap;color:#7f8f70;font:6px var(--mono,monospace);letter-spacing:1.1px}
 .creation-box__glow{position:absolute;inset:-22%;opacity:0;pointer-events:none;border-radius:50%;background:radial-gradient(circle,#c8db8d60 0%,#a8c99a18 34%,transparent 68%);transform-origin:50% 50%}
 .creation-box__ring{position:absolute;inset:0;opacity:0;border:1px solid #c2d2a88c;border-radius:50%;transform-origin:50% 50%}
+.creation-box__echo{position:absolute;inset:0;opacity:0;border:1px solid #f1876670;border-radius:50%;transform-origin:50% 50%}
+.creation-box__fragment{position:absolute;left:50%;top:38%;width:14px;height:11px;border:1px solid currentColor;border-radius:2px;opacity:0;transform-origin:center;will-change:transform,opacity;box-shadow:0 0 10px #d4e2b522}
+.creation-box__fragment--1{border:0;font:600 15px/1 var(--heading,sans-serif);width:12px;height:15px}
+.creation-box__fragment--2{border:0;width:12px;height:12px;font-size:15px;line-height:1}
 .creation-box__shard{position:absolute;left:50%;top:43%;width:5px;height:5px;border-radius:1px;opacity:0;pointer-events:none;will-change:transform,opacity}
 .creation-box__shard--1{width:3px;height:9px;border-radius:1px}
 .creation-box__shard--2{width:6px;height:6px;clip-path:polygon(50% 0,100% 100%,0 100%)}
 @media(max-width:640px){.creation-box{left:16px;bottom:82px;width:48px;height:48px}.creation-box__label{font-size:5px;letter-spacing:.65px;top:calc(100% + 6px)}.creation-loader__corner{top:25px;left:25px;font-size:6px;gap:13px}.creation-loader__copy{top:calc(48% - 158px)}.creation-loader__eyebrow{font-size:5.5px;letter-spacing:1.25px;margin-bottom:15px}.creation-loader__copy h2{font-size:27px;letter-spacing:-1.1px}.creation-loader__footer{top:calc(48% + 122px);width:228px}.creation-loader__progress-caption{font-size:7px}}
 @media(max-height:530px){.creation-loader__copy{top:calc(48% - 145px)}.creation-loader__copy h2{font-size:27px}.creation-loader__footer{top:calc(48% + 115px)}.creation-loader__corner{top:18px;left:24px}}
-@media(prefers-reduced-motion:reduce){.creation-loader{display:none}.creation-box,.creation-box__art,.creation-box__shard{will-change:auto}}
+@media(prefers-reduced-motion:reduce){.creation-loader{display:none}.creation-box,.creation-box__art,.creation-box__shard,.creation-box__fragment{will-change:auto}}

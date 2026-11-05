@@ -70,11 +70,69 @@
 .element-builder-cursor[data-vertical='above'] .assembly-cursor-name { top: auto; bottom: 22px; }
 .element-builder-cursor[data-vertical='above'] .assembly-cursor-action { top: auto; bottom: 42px; }
 
+.element-builder-context-menu {
+  position: absolute;
+  z-index: 11;
+  width: 148px;
+  height: 100px;
+  box-sizing: border-box;
+  padding: 4px;
+  border: 1px solid #5e655275;
+  border-radius: 7px;
+  background: #252920fa;
+  box-shadow: 0 9px 24px #080c0866, 0 1px 0 #ffffff0c inset;
+  opacity: 0;
+  visibility: hidden;
+  color: #e8e9e1;
+  font: 400 9px/1.2 var(--sans, 'Manrope', sans-serif);
+  transform-origin: 10px 10px;
+}
+
+.element-builder-context-heading {
+  display: flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  color: #8d9881;
+  font: 6px/1 var(--mono, 'IBM Plex Mono', monospace);
+  letter-spacing: 0.8px;
+}
+
+.element-builder-context-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  box-sizing: border-box;
+  padding: 0 7px;
+  border-radius: 3px;
+  transform-origin: center;
+}
+
+.element-builder-context-row--muted { color: #7c8771; }
+.element-builder-context-row kbd { color: inherit; opacity: .6; font: 7px/1 var(--mono, monospace); }
+.element-builder-context-row i { margin-right: 3px; font-style: normal; }
+.element-builder-context-row--paste { color: #e8e9e1; }
+
+.element-builder-click-pulse {
+  position: absolute;
+  z-index: 13;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border: 1px solid var(--element-builder-color, #a8c99a);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--element-builder-color, #a8c99a) 10%, transparent);
+  opacity: 0;
+  visibility: hidden;
+}
+
 @media (max-width: 767px) {
   .element-builder-cursor .assembly-cursor-name { font-size: 8px; padding: 3px 5px; }
   .element-builder-cursor .assembly-cursor-action { padding: 3px 5px; font-size: 6px; }
   .element-builder-cursor[data-edge='right']::after { left: auto; right: 3px; }
   .element-builder-cursor[data-vertical='above']::after { top: auto; bottom: 22px; }
+  .element-builder-context-menu { border-radius: 6px; box-shadow: 0 6px 16px #080c085c; }
 }
 
 @media (prefers-reduced-motion: reduce) {

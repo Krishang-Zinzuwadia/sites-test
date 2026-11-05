@@ -51,6 +51,7 @@
 .ps-toolkit-small-note{font-family:var(--mono,'IBM Plex Mono',monospace);font-size:7px;letter-spacing:1px;color:#7e8775}
 .ps-toolkit-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;min-height:166px;align-content:start;border-radius:5px}
 .ps-tool{display:flex;align-items:center;gap:9px;min-width:0;min-height:50px;padding:10px;background:#22271e;border:1px solid #343c2d;border-radius:6px;animation:ps-tool-appear .22s ease both}
+.ps-tool[data-build-tech]{animation:none}
 .ps-tool>span:nth-child(2){font-size:10px;white-space:nowrap;color:#c6ccbe}
 .ps-tool-symbol{display:grid;place-items:center;flex-shrink:0;width:22px;height:22px;font-family:var(--mono,'IBM Plex Mono',monospace);font-size:13px;font-weight:500;letter-spacing:-1px}
 .ps-tool-dot{flex-shrink:0;margin-left:auto;width:3px;height:3px;border-radius:50%;background:#5c6c50;opacity:.8}

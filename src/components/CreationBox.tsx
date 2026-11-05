@@ -30,7 +30,9 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
     const motionAllowed = enabled && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
     let opening: gsap.core.Timeline | undefined
     let bursts: gsap.core.Timeline | undefined
+    let closing: gsap.core.Timeline | undefined
     let resizeFrame = 0
+    let lastSpawn = -Infinity
     const ctx = gsap.context(() => {}, root)
     const art = source.querySelector('.creation-box__art')
     const flaps = source.querySelectorAll('.creation-box__flap')
@@ -38,6 +40,8 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
     const sparks = source.querySelectorAll('.creation-box__shard')
     const glow = source.querySelector('.creation-box__glow')
     const ring = source.querySelector('.creation-box__ring')
+    const echo = source.querySelector('.creation-box__echo')
+    const fragments = source.querySelectorAll('.creation-box__fragment')
     const finish = () => {
       if (disposed || isReady) return
       isReady = true
@@ -47,6 +51,8 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
     }
 
     source.dataset.ready = 'false'
+    const label = source.querySelector('.creation-box__label')
+    if (label) label.textContent = 'THE IDEA BOX'
     setLoading(motionAllowed)
 
     ctx.add(() => {
@@ -54,7 +60,8 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
       gsap.set(flaps, { scale: 1, rotation: 0, opacity: 1 })
       gsap.set(lid, { opacity: 0 })
       gsap.set(sparks, { x: 0, y: 0, opacity: 0, scale: 0 })
-      gsap.set([glow, ring], { opacity: 0 })
+      gsap.set(fragments, { x: 0, y: 0, opacity: 0, scale: .1 })
+      gsap.set([glow, ring, echo], { opacity: 0 })
 
       if (!motionAllowed) {
         finish()
@@ -87,11 +94,24 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
         }, 0)
         .to('.creation-loader__progress-fill', { scaleX: 1, duration: 1.6, ease: 'power2.inOut' }, 0)
         .fromTo('.creation-box__energy', { opacity: 0, scale: 0.5 }, { opacity: 0.85, scale: 1, duration: 1.35, ease: 'power2.in' }, 0.15)
-        .to(art, { y: -3, rotation: -2, duration: 0.12, yoyo: true, repeat: 3, ease: 'sine.inOut' }, 1.1)
-        .to(lid, { x: 5, y: -34, rotation: -18, opacity: 0, duration: 0.5, ease: 'power2.out' }, 1.55)
+        .to(art, { y: 2, scaleX: 1.04, scaleY: .94, duration: .25, ease: 'sine.inOut' }, 1.23)
+        .to(art, { y: -4, scaleX: .98, scaleY: 1.05, duration: .18, ease: 'power2.out' }, 1.48)
+        .to(lid, { x: 7, y: -45, rotation: -24, opacity: 0, duration: .66, ease: 'power3.out' }, 1.51)
         .to(flaps, { scale: 1, opacity: 1, duration: 0.6, stagger: 0.06, ease: 'back.out(1.3)' }, 1.56)
-        .fromTo(ring, { scale: 0.4, opacity: 0.8 }, { scale: 3.3, opacity: 0, duration: 0.9, ease: 'power2.out' }, 1.57)
-        .fromTo(glow, { scale: 0.5, opacity: 0.6 }, { scale: 2, opacity: 0, duration: 0.85, ease: 'power2.out' }, 1.57)
+        .fromTo(ring, { scale: .25, opacity: .8, rotationX: 58 }, { scale: 3.8, opacity: 0, duration: 1.05, ease: 'power3.out' }, 1.55)
+        .fromTo(echo, { scale: .2, opacity: .55, rotationX: 58 }, { scale: 3, opacity: 0, duration: .95, ease: 'power2.out' }, 1.69)
+        .fromTo(glow, { scale: .5, opacity: .75 }, { scale: 2.4, opacity: 0, duration: .9, ease: 'power2.out' }, 1.55)
+        .to(fragments, {
+          x: (i: number) => Math.cos(-Math.PI + i * Math.PI / (fragments.length - 1)) * (50 + i % 3 * 14),
+          y: (i: number) => -34 - Math.sin(i * Math.PI / (fragments.length - 1)) * (55 + i % 2 * 14),
+          rotation: (i: number) => (i % 2 ? 1 : -1) * (10 + i * 5),
+          scale: 1,
+          opacity: .9,
+          duration: .58,
+          stagger: .018,
+          ease: 'power3.out',
+        }, 1.56)
+        .to(fragments, { y: '-=12', opacity: 0, scale: 1.12, duration: .32, stagger: .018, ease: 'sine.in' }, 2.02)
         .to('.creation-box__energy', { opacity: 0, duration: 0.5 }, 1.7)
         .to(sparks, {
           x: (i: number) => Math.cos((i / sparks.length) * Math.PI * 2) * (42 + (i % 3) * 13),
@@ -106,16 +126,24 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
         .to('.creation-loader__copy, .creation-loader__footer', { opacity: 0, y: -8, duration: 0.3 }, 1.88)
         .to(overlayRef.current, { opacity: 0, duration: 0.45, ease: 'power2.inOut' }, 1.98)
         .to(source, { x: 0, y: 0, scale: 1, duration: 0.62, ease: 'power3.inOut' }, 1.82)
-        .to(art, { y: 0, rotation: 0, duration: 0.3, ease: 'power2.out' }, 2)
+        .to(art, { y: 0, rotation: 0, scaleX: 1, scaleY: 1, duration: .4, ease: 'sine.inOut' }, 1.9)
         .to('.creation-box__label', { opacity: 1, duration: 0.3 }, 2.22)
         .call(finish, [], 2.46)
     })
 
     const spawn = () => {
       if (!isReady || !motionAllowed || disposed) return
+      const now = performance.now()
+      if (now - lastSpawn < 200) return
+      lastSpawn = now
+      closing?.kill()
       bursts?.kill()
       ctx.add(() => {
-        gsap.killTweensOf([art, glow, ...sparks])
+        gsap.killTweensOf([art, glow, lid, ...flaps, ...sparks])
+        gsap.set(lid, { opacity: 0 })
+        gsap.to(flaps, { scale: 1, opacity: 1, duration: .3, ease: 'sine.out' })
+        const label = source.querySelector('.creation-box__label')
+        if (label) label.textContent = 'THE IDEA BOX'
         bursts = gsap.timeline()
           .fromTo(art, { scale: 1 }, { scale: 1.12, duration: 0.13, yoyo: true, repeat: 1, ease: 'sine.inOut' })
           .fromTo(glow, { scale: 0.6, opacity: 0.32 }, { scale: 1.6, opacity: 0, duration: 0.55, ease: 'power2.out' }, 0)
@@ -130,6 +158,20 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
           .to(sparks, { opacity: 0, scale: 0.15, duration: 0.24 }, 0.23)
       })
     }
+    const settle = () => {
+      if (!isReady || !motionAllowed || disposed) return
+      closing?.kill()
+      ctx.add(() => {
+        closing = gsap.timeline({ delay: 1.1 })
+          .to(flaps, { scale: .12, opacity: 0, duration: .5, stagger: .06, ease: 'sine.inOut' })
+          .fromTo(lid, { y: -18, x: 2, rotation: -8, opacity: 0 }, { y: 0, x: 0, rotation: 0, opacity: 1, duration: .5, ease: 'power2.out' }, '-=.22')
+          .fromTo(art, { y: 0 }, { y: 2, scaleY: .97, duration: .15, yoyo: true, repeat: 1, ease: 'sine.inOut' }, '-=.06')
+          .call(() => {
+            const label = source.querySelector('.creation-box__label')
+            if (label) label.textContent = 'IDEAS, ASSEMBLED'
+          })
+      })
+    }
     const resize = () => {
       // A resize during the title settles the box before consumers read its rect.
       if (isReady) return
@@ -139,14 +181,17 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
       })
     }
     document.addEventListener('assembly:spawn', spawn)
+    document.addEventListener('assembly:tour-complete', settle)
     window.addEventListener('resize', resize)
     return () => {
       disposed = true
       cancelAnimationFrame(resizeFrame)
       document.removeEventListener('assembly:spawn', spawn)
+      document.removeEventListener('assembly:tour-complete', settle)
       window.removeEventListener('resize', resize)
       opening?.kill()
       bursts?.kill()
+      closing?.kill()
       ctx.revert()
     }
   }, [enabled, replayKey])
@@ -170,6 +215,7 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
       <div ref={sourceRef} data-creation-source data-ready="false" className={`creation-box${loading ? ' is-loading' : ''}`} aria-hidden="true">
         <div className="creation-box__glow" />
         <div className="creation-box__ring" />
+        <div className="creation-box__echo" />
         <div className="creation-box__art">
           <svg viewBox="-12 -14 152 154" fill="none" xmlns="http://www.w3.org/2000/svg">
             <ellipse cx="64" cy="124" rx="49" ry="10" fill="#000" opacity=".2" />
@@ -191,7 +237,8 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
             <g className="creation-box__lid"><path d="M10 57L64 30L118 57L64 84L10 57Z" fill="#DCDDC4" stroke="#869271" strokeWidth="1.4" strokeLinejoin="round" /><path d="M10 57L64 30L88 42L34 69L10 57Z" fill="#C0D1A9" /><path d="M49 37L104 64L91 70L36 43L49 37Z" fill="#EDE8D2" /><path d="M64 42L81 50L64 59L47 50L64 42Z" fill="#F18766" /><path d="M64 46V55M60 48L68 52M60 52L68 48" stroke="#86513E" strokeWidth="1.2" strokeLinecap="round" /></g>
           </svg>
         </div>
-        {Array.from({ length: 12 }, (_, i) => <span key={i} className={`creation-box__shard creation-box__shard--${i % 3}`} style={{ backgroundColor: shardColors[i % shardColors.length] }} />)}
+        {Array.from({ length: 24 }, (_, i) => <span key={i} className={`creation-box__shard creation-box__shard--${i % 3}`} style={{ backgroundColor: shardColors[i % shardColors.length] }} />)}
+        {Array.from({ length: 7 }, (_, i) => <span key={`fragment-${i}`} className={`creation-box__fragment creation-box__fragment--${i % 3}`} style={{ color: shardColors[i % shardColors.length] }}>{i % 3 === 1 ? 'T' : i % 3 === 2 ? '✳' : ''}</span>)}
         <span className="creation-box__label">THE IDEA BOX</span>
       </div>
     </div>
