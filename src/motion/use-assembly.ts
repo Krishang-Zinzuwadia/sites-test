@@ -14,7 +14,7 @@ type Motion = { x: number; y: number; rotation: number; scale: number; opacity: 
 type CursorControl = {
   x: number; y: number; edge: string; vertical: string;
   setX: (value: number) => void; setY: (value: number) => void;
-  setScale: (value: number) => void; flush: () => void;
+  setScale: (value: number) => void;
 };
 type ToolKind = 'layout' | 'text' | 'font' | 'color' | 'spacing';
 type TargetPlan = {
@@ -35,6 +35,7 @@ type ScenePlan = {
   onIntroProgress?: (progress: number) => void; onIntroComplete?: () => void;
   constructionCleanup?: () => void;
   invalidateCaret?: () => void;
+  syncCursorControls?: () => void;
 };
 
 const motionProperties = ['transform', 'translate', 'rotate', 'scale', 'opacity', 'visibility', 'clip-path', 'will-change', 'filter'];
@@ -198,13 +199,18 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
         setX: (value: number) => { state.x = value; writeX(value); },
         setY: (value: number) => { state.y = value; writeY(value); },
         setScale: (value: number) => writeScale(value),
-        flush: () => { writeX(state.x); writeY(state.y); },
       };
       control = state;
       cursorControls.set(cursor, state);
     }
     return control;
   };
+  plan.syncCursorControls = () => cursorControls.forEach((control, cursor) => {
+    // GSAP can restore an entire saved transform during an explicit refresh.
+    // Resync once there, rather than asking GSAP for every cursor every frame.
+    control.x = Number(gsap.getProperty(cursor, 'x'));
+    control.y = Number(gsap.getProperty(cursor, 'y'));
+  });
   const panelEntries = Object.entries(plan.panels) as [ToolKind, HTMLDivElement][];
   const panelRects = new Map<HTMLElement, DOMRect>();
   const options = new Map<string, HTMLElement>();
@@ -404,6 +410,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   // Leo types into an isolated decorative ghost. React's semantic text is untouched.
   const copyStart = 1.98, copyEnd = 3.2;
   let typedCount = -1;
+  let caretSceneWidth = 0;
   let caretPoint: Point | undefined;
   const invalidateCaret = () => { caretPoint = undefined; invalidateMotionFrame(plan.caret); };
   plan.invalidateCaret = invalidateCaret;
@@ -419,7 +426,8 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   const typing = { count: 0 };
   const copyControl = cursorControl(leo), setCopyX = copyControl.setX, setCopyY = copyControl.setY;
   timeline.fromTo(typing, { count: 0 }, { count: plan.copy.length, duration: copyEnd - copyStart, ease: `steps(${Math.max(1, plan.copy.length)})`, onUpdate: () => {
-    const count = Math.round(typing.count);
+    const count = Math.round(typing.count), sceneWidth = plan.scene.clientWidth;
+    if (sceneWidth !== caretSceneWidth) { caretSceneWidth = sceneWidth; caretPoint = undefined; }
     if (count !== typedCount) {
       typedCount = count;
       plan.typingContent.textContent = plan.copy.slice(0, count);
@@ -429,7 +437,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
       // Real glyph wrapping remains the authority. Read only after a changed
       // character/font/layout, then retain its scene-local position while scrolling.
       const caret = getMotionRect(plan.caret, true), scene = getMotionRect(plan.scene);
-      caretPoint = { x: Math.min(plan.scene.clientWidth - 56, caret.left - scene.left + 7), y: caret.top - scene.top + 10 };
+      caretPoint = { x: Math.min(sceneWidth - 56, caret.left - scene.left + 7), y: caret.top - scene.top + 10 };
     }
     setCopyX(caretPoint.x); setCopyY(caretPoint.y);
   } }, copyStart);
@@ -533,7 +541,11 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   timeline.fromTo([alignTarget.target, alignTarget.shell], { x: snap }, { x: 0, duration: 0.35, ease: 'power2.out', immediateRender: false }, snapAt);
   [eli, remy].forEach((cursor, index) => {
     const control = cursorControl(cursor);
-    timeline.fromTo(control, { x: () => point(alignTarget, index, index).x + snap, y: () => point(alignTarget, index, index).y }, { x: () => point(alignTarget, index, index).x, duration: 0.35, ease: 'power2.out', immediateRender: false, onUpdate: control.flush }, snapAt);
+    const alignment = { offset: snap };
+    timeline.fromTo(alignment, { offset: snap }, { offset: 0, duration: 0.35, ease: 'power2.out', immediateRender: false, onUpdate: () => {
+      const corner = point(alignTarget, index, index);
+      control.setX(corner.x + alignment.offset); control.setY(corner.y);
+    } }, snapAt);
   });
   timeline.to(plan.guides, { autoAlpha: 0, duration: 0.2 }, 7.35);
   timeline.to(plan.grid, { autoAlpha: 0, duration: 0.2 }, 7.35);
@@ -672,7 +684,10 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
           makeReadable([...plan.targets.map(({ target: node }) => node), plan.copyLeaf]);
           gsap.set(plan.overlay, { autoAlpha: 0 });
         };
-        const restoreFocusedScene = () => revealFocusedTarget(document.activeElement, true);
+        const restoreFocusedScene = () => {
+          plans.forEach(plan => plan.syncCursorControls?.());
+          revealFocusedTarget(document.activeElement, true);
+        };
         const onFocusIn = (event: FocusEvent) => revealFocusedTarget(event.target);
         const onFocusOut = (event: FocusEvent) => {
           if (focusedPlan && event.relatedTarget instanceof Node && focusedPlan.scene.contains(event.relatedTarget)) return;
