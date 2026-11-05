@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { MOTION_PLAYBACK_RATE } from './motion-tempo'
 
 /** A real scrolling camera, independent of any individual assembly timeline. */
 export function useAutoTour(enabled: boolean, replayKey: number) {
@@ -80,7 +81,7 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
     }
     let previous = 0
     let position = window.scrollY
-    let velocity = Math.max(90, Math.min(116, innerHeight * .12))
+    let velocity = Math.max(90, Math.min(116, innerHeight * .12)) * MOTION_PLAYBACK_RATE
     const toolkit = document.getElementById('toolkit')
     let viewportHeight = innerHeight
     let end = 0
@@ -114,7 +115,7 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
         return
       }
       const inspectingTools = toolkitTop - position < viewportHeight && toolkitBottom - position > viewportHeight * .2
-      const desiredSpeed = inspectingTools ? 62 : Math.max(90, Math.min(116, viewportHeight * .12))
+      const desiredSpeed = (inspectingTools ? 62 : Math.max(90, Math.min(116, viewportHeight * .12))) * MOTION_PLAYBACK_RATE
       velocity += (desiredSpeed - velocity) * Math.min(1, elapsed * 3)
       position = Math.min(end, position + velocity * elapsed)
       window.scrollTo({ top: position, behavior: 'instant' })

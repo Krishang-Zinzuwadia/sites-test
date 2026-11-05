@@ -6,6 +6,7 @@ import { addElementConstruction } from './element-construction';
 import { constructionMenuPosition, keepConstructionMenuInView, releaseConstructionMenu } from './menu-placement';
 import { getCreationSourcePoint, getMotionRect, getMotionScrollLimit, getMotionViewport, invalidateMotionFrame, retainMotionFrame } from './motion-frame';
 import { cancelMotionRead, queueMotionRead } from './motion-read';
+import { MOTION_PLAYBACK_RATE } from './motion-tempo';
 import './assembly.css';
 
 type AssemblyKind = 'text' | 'card' | 'art' | 'line';
@@ -664,7 +665,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     skip: [plan.copyLeaf],
     onPrimaryArtworkReady: plan.intro ? plan.onIntroHandoff : undefined,
   });
-  timeline.duration(plan.intro ? 8 : 10);
+  timeline.duration((plan.intro ? 8 : 10) / MOTION_PLAYBACK_RATE);
   timeline.eventCallback('onUpdate', () => {
     if (plan.intro) plan.onIntroProgress?.(timeline.progress());
     const time = timeline.time();
