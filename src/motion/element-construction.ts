@@ -5,6 +5,7 @@ import { addSpecialConstruction } from './special-construction'
 import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement'
 import { getMotionRect, getCreationSourcePoint, invalidateMotionFrame } from './motion-frame'
 import { queueMotionRead, cancelMotionRead } from './motion-read'
+import { interpolateCursor } from './cursor-travel'
 import './element-construction.css'
 
 type ElementConstructionOptions = {
@@ -308,25 +309,17 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     const box = placeMenu(job)
     return { x: box.x + 64, y: box.y + 82 }
   }
-  const curvedTravel = (job: Job, from: () => Point, to: () => Point, at: number, duration: number, action: string) => {
+  const travelTo = (job: Job, from: () => Point, to: () => Point, at: number, duration: number, action: string) => {
     const travel = { value: 0 }
     let origin: Point | undefined
     timeline.call(() => { origin ??= from() }, [], at)
     timeline.fromTo(travel, { value: 0 }, {
-      value: 1, duration, ease: 'power2.inOut', immediateRender: false,
+      value: 1, duration, ease: 'none', immediateRender: false,
       onUpdate: () => {
         if (disposed) return
         origin ??= from()
-        const target = to(), t = travel.value, inverse = 1 - t
-        const distance = Math.hypot(target.x - origin.x, target.y - origin.y)
-        const bend = Math.min(82, Math.max(12, distance * 0.16)) * (job.worker.artwork ? -1 : 1)
-        const controlX = (origin.x + target.x) / 2 + bend
-        const controlY = (origin.y + target.y) / 2 - Math.abs(bend)
-        setCursor(job,
-          inverse * inverse * origin.x + 2 * inverse * t * controlX + t * t * target.x,
-          inverse * inverse * origin.y + 2 * inverse * t * controlY + t * t * target.y,
-          action,
-        )
+        const point = interpolateCursor(origin, to(), travel.value, job.worker.artwork)
+        setCursor(job, point.x, point.y, action)
       },
     }, at)
   }
@@ -400,7 +393,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
       setCursor(job, point.x, point.y, `Task ${taskNumber} · ${job.action}`)
     }, [], at)
     timeline.fromTo(job.worker.cursor, { autoAlpha: 0, scale: 0.18 }, { autoAlpha: 1, scale: 1, duration: Math.min(0.06, flight * 0.35), immediateRender: false }, at)
-    curvedTravel(job, liveSource, () => anchor(job), at, flight, `Task ${taskNumber} · ${job.action}`)
+    travelTo(job, liveSource, () => anchor(job), at, flight, `Task ${taskNumber} · ${job.action}`)
 
     if (job.kind === 'art' && job.pasted) {
       const clickAt = workStart + writing * 0.52
@@ -417,7 +410,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
           onReverseComplete: () => { if (job.menu) releaseConstructionMenu(job.menu) },
         }, workStart + writing * 0.08)
       }
-      curvedTravel(job, () => anchor(job), () => pastePoint(job), workStart + writing * 0.2, writing * 0.32, 'Choose Paste')
+      travelTo(job, () => anchor(job), () => pastePoint(job), workStart + writing * 0.2, writing * 0.32, 'Choose Paste')
       timeline.call(() => {
         const point = pastePoint(job)
         setCursor(job, point.x, point.y, job.action)
@@ -472,7 +465,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     const returnAt = start + (job.at + job.weight) * unit
     const returnDuration = .75 * unit
     timeline.call(() => cancelMotionRead(job), [], returnAt)
-    curvedTravel(job, () => cursorPoint(job.worker), liveSource, returnAt, returnDuration, 'Task complete · back to the box')
+    travelTo(job, () => cursorPoint(job.worker), liveSource, returnAt, returnDuration, 'Task complete · back to the box')
     timeline.to(job.worker.cursor, { scale: 0.18, autoAlpha: 0, duration: .08 * unit, immediateRender: false }, returnAt + returnDuration)
   }
 

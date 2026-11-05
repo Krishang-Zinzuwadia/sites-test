@@ -6,6 +6,7 @@ import { addElementConstruction } from './element-construction';
 import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement';
 import { getCreationSourcePoint, getMotionRect, getMotionScrollLimit, getMotionViewport, invalidateMotionFrame, retainMotionFrame } from './motion-frame';
 import { cancelMotionRead, queueMotionRead } from './motion-read';
+import { interpolateCursor } from './cursor-travel';
 import './assembly.css';
 
 type AssemblyKind = 'text' | 'card' | 'art' | 'line';
@@ -275,7 +276,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     if (plan.trigger?.direction === -1) { plan.sourceOrigins.delete(at); return; }
     if (!plan.sourceOrigins.has(at)) plan.sourceOrigins.set(at, sourcePoint(plan, at, true));
   }, [], at);
-  const curve = (cursor: HTMLElement, destination: () => Point, start: number, duration: number, mode: 'travel' | 'birth' | 'return' = 'travel', side = 1) => {
+  const flight = (cursor: HTMLElement, destination: () => Point, start: number, duration: number, mode: 'travel' | 'birth' | 'return' = 'travel', helper = false) => {
     const progress = { value: 0 };
     let origin: Point | undefined;
     const control = cursorControl(cursor), setX = control.setX, setY = control.setY, setScale = control.setScale;
@@ -289,22 +290,19 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
         origin = { x: control.x, y: control.y };
       }
     }, [], start);
-    timeline.fromTo(progress, { value: 0 }, { value: 1, duration, ease: 'power1.inOut', immediateRender: false, onUpdate: () => {
+    timeline.fromTo(progress, { value: 0 }, { value: 1, duration, ease: 'none', immediateRender: false, onUpdate: () => {
       const from = origin ?? sourcePoint(plan, start, true), to = destination(), p = progress.value;
-      const distance = Math.hypot(to.x - from.x, to.y - from.y);
-      const bend = Math.min(74, Math.max(8, distance * 0.14));
-      const control = { x: (from.x + to.x) / 2 + bend * 0.35 * side, y: (from.y + to.y) / 2 - bend };
-      setX((1 - p) ** 2 * from.x + 2 * (1 - p) * p * control.x + p * p * to.x);
-      setY((1 - p) ** 2 * from.y + 2 * (1 - p) * p * control.y + p * p * to.y);
+      const position = interpolateCursor(from, to, p, helper);
+      setX(position.x); setY(position.y);
       if (mode === 'birth') setScale(0.15 + 0.85 * Math.min(1, p * 4));
       if (mode === 'return') setScale(1 - 0.86 * Math.max(0, (p - 0.76) / 0.24));
     } }, start);
     if (mode === 'return') timeline.set(cursor, { autoAlpha: 0 }, start + duration);
   };
-  const approach = (cursor: HTMLElement, getPoint: () => Point, start: number, fromRight = false) => curve(cursor, getPoint, start, 0.23, 'birth', fromRight ? -1 : 1);
-  const move = (cursor: HTMLElement, getPoint: () => Point, start: number, duration = 0.28) => curve(cursor, getPoint, start, duration);
-  const depart = (cursor: HTMLElement, _getPoint: () => Point, start: number) => curve(cursor, () => sourcePoint(plan, start, true), start, 0.65, 'return');
-  const returnHome = (cursor: HTMLElement, start: number) => curve(cursor, () => sourcePoint(plan, start, true), start, 0.4, 'return');
+  const approach = (cursor: HTMLElement, getPoint: () => Point, start: number, helper = false) => flight(cursor, getPoint, start, 0.23, 'birth', helper);
+  const move = (cursor: HTMLElement, getPoint: () => Point, start: number, duration = 0.28) => flight(cursor, getPoint, start, duration);
+  const depart = (cursor: HTMLElement, _getPoint: () => Point, start: number) => flight(cursor, () => sourcePoint(plan, start, true), start, 0.65, 'return');
+  const returnHome = (cursor: HTMLElement, start: number) => flight(cursor, () => sourcePoint(plan, start, true), start, 0.4, 'return');
   const menuOwners: Record<ToolKind, HTMLDivElement> = { layout: mia, text: noah, font: noah, color: ava, spacing: eli };
   const menuAnchors = new Map<ToolKind, Point>();
   const placePanel = (kind: ToolKind, capture = false) => {

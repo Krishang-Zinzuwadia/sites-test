@@ -1,4 +1,5 @@
 import gsap from 'gsap'
+import { interpolateCursor } from './cursor-travel'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { collaborators, createCursor, type Collaborator } from './design-tools'
 import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement'
@@ -128,14 +129,9 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
   const travel = (person: Worker, from: () => Point, to: () => Point, at: number, duration: number, action: string) => {
     const progress = { value: 0 }
     timeline.fromTo(progress, { value: 0 }, {
-      value: 1, duration, ease: 'power2.inOut', immediateRender: false,
+      value: 1, duration, ease: 'none', immediateRender: false,
       onUpdate: () => {
-        const a = from(), b = to(), t = progress.value, inverse = 1 - t
-        const bend = Math.min(64, Math.max(7, Math.hypot(b.x - a.x, b.y - a.y) * .12))
-        setCursor(person, {
-          x: inverse * inverse * a.x + 2 * inverse * t * ((a.x + b.x) / 2 + bend) + t * t * b.x,
-          y: inverse * inverse * a.y + 2 * inverse * t * ((a.y + b.y) / 2 - bend) + t * t * b.y,
-        }, action)
+        setCursor(person, interpolateCursor(from(), to(), progress.value), action)
       },
     }, at)
   }

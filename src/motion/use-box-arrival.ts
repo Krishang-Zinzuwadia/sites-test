@@ -4,6 +4,7 @@ import { collaborators, createCursor } from './design-tools'
 import { addElementConstruction } from './element-construction'
 import { getMotionRect, retainMotionFrame } from './motion-frame'
 import { cancelMotionRead, queueMotionRead } from './motion-read'
+import { interpolateCursor } from './cursor-travel'
 
 /** Even the page furniture is unpacked from the same physical source. */
 export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: boolean, replayKey: number) {
@@ -76,7 +77,7 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
         activeTimeline.to(returnFlight, {
           progress: 1,
           duration: .62,
-          ease: 'sine.inOut',
+          ease: 'none',
           onStart: () => {
             cancelMotionRead(readKey)
             const rect = getMotionRect(item, true)
@@ -87,10 +88,9 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
           },
           onUpdate: () => {
             const destination = sourcePoint()
-            const t = returnFlight.progress
-            const bend = Math.sin(Math.PI * t) * Math.min(80, Math.abs(destination.y - departure.y) * .14 + 24)
-            moveX(departure.x + (destination.x - departure.x) * t + bend)
-            moveY(departure.y + (destination.y - departure.y) * t - bend * .4)
+            const position = interpolateCursor(departure, destination, returnFlight.progress)
+            moveX(position.x)
+            moveY(position.y)
           },
         }, at + 1.25)
         activeTimeline.to(cursor, { scale: .16, autoAlpha: 0, duration: .12, ease: 'power2.in' }, at + 1.78)

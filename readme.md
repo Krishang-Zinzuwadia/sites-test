@@ -1,5 +1,7 @@
 # Assembled
 
+This branch is the [cursor interpolation experiment](docs/cursor-lerp-experiment.md), deployed separately at https://sites-test-cursor-lerp.krishangzinzuwadia.workers.dev. Its Cloudflare configuration targets the preview Worker. The production site is maintained on `main`.
+
 A concept portfolio unpacked from a single idea box, built by a crew of collaborators while the page scrolls itself. Built with Vite, React, TypeScript, GSAP and original inline SVG artwork.
 
 ## Run
@@ -61,7 +63,7 @@ Automated tests are intentionally absent. They will only be added after the fini
 
 ## Deploy to Cloudflare
 
-The site uses Workers Static Assets, configured in `cloudflare.config.ts` for the `sites-test` Worker and `sites-test.krishang.dev`. A separate Vite configuration produces Cloudflare Build Output while preserving the regular local preview commands.
+The preview uses Workers Static Assets, configured in `cloudflare.config.ts` for the `sites-test-cursor-lerp` Worker and its workers.dev address. A separate Vite configuration produces Cloudflare Build Output while preserving the regular local preview commands.
 
 ```sh
 npx cf auth login
@@ -75,6 +77,6 @@ npm run build:cloudflare
 npx cf deploy --prebuilt --mode production --dry-run
 ```
 
-`npm run deploy` builds and publishes the site and its configured custom domain. For CI, provide `CLOUDFLARE_API_TOKEN` through the CI secret store. Credentials, local Cloudflare output, and environment files are excluded from Git.
+`npm run deploy` builds and publishes this preview Worker. For CI, provide `CLOUDFLARE_API_TOKEN` through the CI secret store. Credentials, local Cloudflare output, and environment files are excluded from Git.
 
 The optional `node scripts/cloudflare-assets.cjs manifest` command describes the built assets for the [Cloudflare direct-upload API](https://developers.cloudflare.com/workers/static-assets/direct-upload/). It returns routing `config` separately from the upload manifest; pass that config into the deployment's `assets.config` metadata so `_headers` is applied rather than served as a public file. Its `upload` mode reads one JSON object `{ "jwt": "...", "buckets": [], "accountId": "..." }` from standard input and returns JSON containing a completion `jwt` and an upload report. Capture its output securely; it contains a short-lived credential. The helper never stores credentials and does not create or deploy a Worker.
