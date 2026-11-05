@@ -4,6 +4,7 @@ import { collaborators, createCursor } from './design-tools'
 import { addElementConstruction } from './element-construction'
 import { getCreationSourcePoint, getMotionRect, retainMotionFrame } from './motion-frame'
 import { cancelMotionRead, queueMotionRead } from './motion-read'
+import { MOTION_PLAYBACK_RATE } from './motion-tempo'
 import { interpolateCursor } from './cursor-travel'
 
 /** Even the page furniture is unpacked from the same physical source. */
@@ -23,7 +24,7 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
     let disposed = false
     const readKeys: object[] = []
     const context = gsap.context(() => {
-      timeline = gsap.timeline()
+      timeline = gsap.timeline().timeScale(MOTION_PLAYBACK_RATE)
       const activeTimeline = timeline
       const items = Array.from(page.querySelectorAll<HTMLElement>('[data-box-arrival]')).filter(item => !item.closest('[data-construction-exempt]'))
       const names = ['Lena', 'Owen', 'June', 'Arlo', 'Esme', 'Jules', 'Tess']

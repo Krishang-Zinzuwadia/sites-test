@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
+import { MOTION_PLAYBACK_RATE } from '../motion/motion-tempo'
 import './creation-box.css'
 
 type CreationBoxProps = {
@@ -77,7 +78,7 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
       const meter = { value: 0 }
       if (progressRef.current) progressRef.current.textContent = '00'
 
-      opening = gsap.timeline()
+      opening = gsap.timeline().timeScale(MOTION_PLAYBACK_RATE)
       opening
         .fromTo('.creation-loader__copy', { y: 10, opacity: 0 }, { y: 0, opacity: 1, duration: .45, ease: 'power2.out' }, 0)
         .to(meter, {
@@ -114,10 +115,10 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
       bursts?.kill()
       ctx.add(() => {
         gsap.killTweensOf([art, glow, lid, aperture])
-        gsap.to(lid, { ...openLid, opacity: 1, duration: .25, ease: 'power2.out' })
+        gsap.to(lid, { ...openLid, opacity: 1, duration: .25 / MOTION_PLAYBACK_RATE, ease: 'power2.out' })
         const label = source.querySelector('.creation-box__label')
         if (label) label.textContent = 'THE IDEA BOX'
-        bursts = gsap.timeline()
+        bursts = gsap.timeline().timeScale(MOTION_PLAYBACK_RATE)
           .fromTo(art, { scale: 1 }, { scale: 1.035, duration: .2, yoyo: true, repeat: 1, ease: 'sine.inOut' })
           .fromTo(glow, { scale: .8, opacity: .16 }, { scale: 1.2, opacity: 0, duration: .45, ease: 'sine.out' }, 0)
           .fromTo(aperture, { opacity: .6 }, { opacity: .3, duration: .45, ease: 'sine.out' }, 0)
@@ -127,7 +128,7 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
       if (!isReady || !motionAllowed || disposed) return
       closing?.kill()
       ctx.add(() => {
-        closing = gsap.timeline({ delay: 1.1 })
+        closing = gsap.timeline({ delay: 1.1 / MOTION_PLAYBACK_RATE }).timeScale(MOTION_PLAYBACK_RATE)
           .to(lid, { y: 0, x: 0, rotation: 0, duration: .5, ease: 'power2.inOut' })
           .to(aperture, { opacity: 0, duration: .3 }, '<')
           .fromTo(art, { y: 0 }, { y: 1, scaleY: .985, duration: .16, yoyo: true, repeat: 1, ease: 'sine.inOut' }, '-=.06')
