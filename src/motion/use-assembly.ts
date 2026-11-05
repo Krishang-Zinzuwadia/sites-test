@@ -192,7 +192,9 @@ function sourcePoint(plan: ScenePlan, at: number, live = false): Point {
   if (live || plan.intro) return source;
   const scene = getMotionRect(plan.scene), view = getMotionViewport(), documentTop = scene.top + view.scrollY;
   const maxScroll = getMotionScrollLimit();
-  const lines = plan.trigger ? undefined : sceneViewportLines(plan.scene, plan.mobile);
+  // ScrollTrigger can exist before refresh has assigned both numeric bounds.
+  // Its presence alone does not mean the fallback geometry is unnecessary.
+  const lines = plan.trigger?.start == null || plan.trigger?.end == null ? sceneViewportLines(plan.scene, plan.mobile) : undefined;
   const start = plan.trigger?.start ?? Math.min(maxScroll, Math.max(0, documentTop - lines!.start));
   const end = plan.trigger?.end ?? Math.min(maxScroll, Math.max(start + 1, documentTop + scene.height - lines!.end));
   // Future scenes are measured before they are on screen. Predict the scroll
