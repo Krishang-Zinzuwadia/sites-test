@@ -32,7 +32,8 @@ function ScrollReadout() {
     const update = () => {
       if (tick) return
       tick = requestAnimationFrame(() => {
-        const next = range > 0 ? Math.round(window.scrollY / range * 100) : 0
+        const flow = document.querySelector<HTMLElement>('.site-root')?.dataset
+        const next = range > 1 ? Math.round(window.scrollY / range * 100) : Number(flow?.assemblyFlowProgress ?? 0)
         if (next !== displayed) { displayed = next; setProgress(next) }
         tick = 0
       })
@@ -45,11 +46,13 @@ function ScrollReadout() {
     observer.observe(document.documentElement)
     window.addEventListener('scroll', update, { passive: true })
     window.addEventListener('resize', measure)
+    document.addEventListener('assembly:flow-state', update)
     update()
     return () => {
       cancelAnimationFrame(tick)
       window.removeEventListener('scroll', update)
       window.removeEventListener('resize', measure)
+      document.removeEventListener('assembly:flow-state', update)
       observer.disconnect()
     }
   }, [])

@@ -5,6 +5,7 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
   const [requested, setRequested] = useState(true)
   const [introDone, setIntroDone] = useState(false)
   const [complete, setComplete] = useState(false)
+  const [assemblyFlow, setAssemblyFlow] = useState<'scroll' | 'playing' | 'complete'>('scroll')
   const frame = useRef(0)
 
   const pause = useCallback(() => {
@@ -26,8 +27,19 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
 
   useEffect(() => {
     const finishIntro = () => setIntroDone(true)
+    const readFlow = () => {
+      const state = document.querySelector<HTMLElement>('.site-root')?.dataset.assemblyFlow
+      const flow = state === 'playing' || state === 'complete' ? state : 'scroll'
+      setAssemblyFlow(flow)
+      if (flow !== 'complete') setComplete(false)
+    }
     document.addEventListener('assembly:intro-complete', finishIntro)
-    return () => document.removeEventListener('assembly:intro-complete', finishIntro)
+    document.addEventListener('assembly:flow-state', readFlow)
+    readFlow()
+    return () => {
+      document.removeEventListener('assembly:intro-complete', finishIntro)
+      document.removeEventListener('assembly:flow-state', readFlow)
+    }
   }, [])
 
   useEffect(() => {
@@ -58,6 +70,12 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
 
   useEffect(() => {
     if (!enabled || !introDone || !requested || complete) return
+    if (assemblyFlow === 'playing') return
+    if (assemblyFlow === 'complete') {
+      setComplete(true)
+      document.dispatchEvent(new CustomEvent('assembly:tour-complete'))
+      return
+    }
     let previous = 0
     let position = window.scrollY
     let velocity = Math.max(90, Math.min(116, innerHeight * .12))
@@ -87,6 +105,12 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
         frame.current = requestAnimationFrame(advance)
         return
       }
+      // Assembly owns a timed crew sequence when there is no scrolling room.
+      // A resize can be measured here before its flow-state event is delivered.
+      if (end <= 1) {
+        frame.current = requestAnimationFrame(advance)
+        return
+      }
       const inspectingTools = toolkitTop - position < viewportHeight && toolkitBottom - position > viewportHeight * .2
       const desiredSpeed = inspectingTools ? 62 : Math.max(90, Math.min(116, viewportHeight * .12))
       velocity += (desiredSpeed - velocity) * Math.min(1, elapsed * 3)
@@ -106,7 +130,7 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
       window.removeEventListener('resize', measure)
       document.documentElement.classList.remove('auto-tour-running')
     }
-  }, [enabled, introDone, requested, complete])
+  }, [enabled, introDone, requested, complete, assemblyFlow])
 
   return {
     playing: enabled && requested && !complete,

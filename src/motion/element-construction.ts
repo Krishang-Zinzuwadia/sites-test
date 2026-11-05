@@ -334,16 +334,24 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     const box = placeMenu(job)
     return { x: box.x + 64, y: box.y + 82 }
   }
+  let geometryRevision = 0
   const travelTo = (job: Job, from: () => Point, to: () => Point, at: number, duration: number, action: string) => {
     const travel = { value: 0 }
     let origin: Point | undefined
-    timeline.call(() => { origin ??= from() }, [], at)
+    let originRevision = -1
+    const flightOrigin = () => {
+      if (!origin || originRevision !== geometryRevision) {
+        origin = from()
+        originRevision = geometryRevision
+      }
+      return origin
+    }
+    timeline.call(flightOrigin, [], at)
     timeline.fromTo(travel, { value: 0 }, {
       value: 1, duration, ease: 'none', immediateRender: false,
       onUpdate: () => {
         if (disposed) return
-        origin ??= from()
-        const point = interpolateCursor(origin, to(), travel.value, job.worker.artwork)
+        const point = interpolateCursor(flightOrigin(), to(), travel.value, job.worker.artwork)
         setCursor(job, point.x, point.y, action)
       },
     }, at)
@@ -396,6 +404,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
         else node.style.removeProperty('transform')
       })
       invalidateMotionFrame()
+      ++geometryRevision
     }
   }
   measure()

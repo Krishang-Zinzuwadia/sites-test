@@ -33,8 +33,9 @@ type ScenePlan = {
   particles: HTMLSpanElement[];
   sourceOrigins: Map<number, Point>;
   copyBox: Box; copy: string; fontFamily: string; mobile: boolean;
-  timeline?: gsap.core.Timeline; trigger?: ScrollTrigger; intro: boolean; introComplete?: boolean;
+  timeline?: gsap.core.Timeline; trigger?: ScrollTrigger; intro: boolean; introComplete?: boolean; timed?: boolean;
   onIntroProgress?: (progress: number) => void; onIntroComplete?: () => void;
+  onTimedProgress?: () => void;
   constructionCleanup?: () => void;
   invalidateCaret?: () => void;
   syncCursorControls?: () => void;
@@ -129,6 +130,7 @@ function positionBox(node: HTMLElement, box: Box) {
 }
 function measureScene(plan: ScenePlan) {
   invalidateMotionFrame();
+  plan.sourceOrigins.clear();
   // Temporarily remove only the transforms we own; restore the identical values
   // so a refresh measures finished layout without changing GSAP's live cache.
   const saved = plan.targets.map(({ target }) => ({ value: target.style.getPropertyValue('transform'), priority: target.style.getPropertyPriority('transform') }));
@@ -208,7 +210,7 @@ function sceneScrollBounds(scene: HTMLElement, mobile: boolean) {
 function sourcePoint(plan: ScenePlan, at: number, live = false): Point {
   if (!live && plan.sourceOrigins.has(at)) return plan.sourceOrigins.get(at)!;
   const source = getCreationSourcePoint(plan.scene);
-  if (live || plan.intro) return source;
+  if (live || plan.intro || plan.timed) return source;
   const view = getMotionViewport();
   // ScrollTrigger can exist before refresh has assigned both numeric bounds.
   // Its presence alone does not mean the fallback geometry is unnecessary.
@@ -290,7 +292,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   const first = plan.targets[0], component = plan.targets.find(({ kind }) => kind === 'art' || kind === 'card') ?? first;
   const alignTarget = plan.targets.find(({ kind }) => kind === 'card') ?? component;
   const captureOrigin = (at: number) => timeline.call(() => {
-    if (plan.trigger?.direction === -1) { plan.sourceOrigins.delete(at); return; }
+    if (!plan.timed && plan.trigger?.direction === -1) { plan.sourceOrigins.delete(at); return; }
     if (!plan.sourceOrigins.has(at)) plan.sourceOrigins.set(at, sourcePoint(plan, at, true));
   }, [], at);
   const flight = (cursor: HTMLElement, destination: () => Point, start: number, duration: number, mode: 'travel' | 'birth' | 'return' = 'travel', helper = false) => {
@@ -313,7 +315,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
         x: () => sourcePoint(plan, start, true).x,
         y: () => sourcePoint(plan, start, true).y,
         scale: 0.15, autoAlpha: 0,
-      }, { autoAlpha: 1, duration: Math.min(0.035, duration * 0.15), immediateRender: false }, start);
+      }, { autoAlpha: 1, scale: 1, duration: Math.min(0.035, duration * 0.15), immediateRender: false }, start);
     }
     timeline.fromTo(progress, { value: 0 }, { value: 1, duration, ease: 'none', immediateRender: false, onUpdate: () => {
       const from = origin ?? sourcePoint(plan, start, true), to = destination(), p = progress.value;
@@ -407,6 +409,13 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
 
   // Release the whole real crew immediately. Each early visit measures a real
   // future work point, then returns home before its next creation task.
+  const copyStart = 1.98, copyEnd = 3.2;
+  const componentStart = mobile ? 2.12 : 1.65;
+  const stagger = Math.min(0.16, 0.65 / plan.targets.length);
+  const componentAt = componentStart + plan.targets.indexOf(component) * stagger;
+  const componentDuration = component.kind === 'text' || component.kind === 'line' ? 0.8 : 1.13;
+  const colorStart = 4.55, alignStart = 5.24;
+  const firstApproaches = [Infinity, 1.15, copyStart - 0.26, colorStart - 0.25, alignStart - 0.24, componentAt - 0.25, Infinity, 1.15, copyStart - 0.26, colorStart - 0.25, alignStart - 0.24, componentAt - 0.25];
   const preparations = [
     () => point(first, 0, 0), () => point(plan.fontTarget, 0, 0),
     () => ({ x: plan.copyBox.x, y: plan.copyBox.y }), () => point(component, 0.88, 0.12),
@@ -418,7 +427,8 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   const preparationLabels = ['Frame', 'Type bounds', 'Copy length', 'Palette', 'Spacing', 'Asset size', 'Resize', 'Text bounds', 'Proof', 'Contrast', 'Grid', 'Delivery'];
   plan.cursors.slice(0, 12).forEach((cursor, index) => {
     if (index === 0 || index === 6) return;
-    const at = index * 0.02, work = preparations[index];
+    const at = index * 0.045, work = preparations[index];
+    const returnAt = Math.min(at + 0.55 + index * 0.05, firstApproaches[index] - 0.44 - (index % 4) * 0.005);
     const marker = element('div', 'assembly-prep-task');
     marker.style.setProperty('--prep-color', collaborators[index].color);
     marker.textContent = preparationLabels[index];
@@ -428,9 +438,9 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
       const position = work();
       Object.assign(marker.style, { left: `${position.x}px`, top: `${position.y - 15}px` });
     }, [], at + 0.23);
-    timeline.fromTo(marker, { autoAlpha: 0, scaleX: 0.3 }, { autoAlpha: 1, scaleX: 1, duration: 0.12, immediateRender: false }, at + 0.23);
-    timeline.to(marker, { autoAlpha: 0, duration: 0.08 }, at + 0.38);
-    returnHome(cursor, at + 0.38);
+    timeline.fromTo(marker, { autoAlpha: 0, scaleX: 0.3 }, { autoAlpha: 1, scaleX: 1, duration: 0.08, immediateRender: false }, at + 0.23);
+    timeline.to(marker, { autoAlpha: 0, duration: 0.06 }, returnAt - 0.06);
+    returnHome(cursor, returnAt);
   });
 
   // Mia establishes actual empty frame bounds before anybody places content.
@@ -479,7 +489,6 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   depart(iris, () => point(plan.fontTarget, 1, 0), 3.9);
 
   // Leo types into an isolated decorative ghost. React's semantic text is untouched.
-  const copyStart = 1.98, copyEnd = 3.2;
   let typedCount = -1;
   let caretSceneWidth = 0;
   let caretPoint: Point | undefined;
@@ -538,10 +547,6 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   depart(sam, () => ({ x: plan.copyBox.x + 8, y: plan.copyBox.y + plan.copyBox.height }), 3.36);
 
   // You place the actual components into Mia's finished frames.
-  const componentStart = mobile ? 2.12 : 1.65;
-  const stagger = Math.min(0.16, 0.65 / plan.targets.length);
-  const componentAt = componentStart + plan.targets.indexOf(component) * stagger;
-  const componentDuration = component.kind === 'text' || component.kind === 'line' ? 0.8 : 1.13;
   approach(you, () => draggedPoint(plan, component, componentAt, 0, 0, 0), componentAt - 0.25, true);
   approach(kai, () => draggedPoint(plan, component, componentAt, 0, 1, 1), componentAt - 0.25);
   plan.targets.forEach((target, index) => {
@@ -594,7 +599,6 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   depart(kai, () => point(alignTarget, 1, 1), checkAt + 0.65);
 
   // Ava tries a palette and applies it to a real accent, preserving its final color.
-  const colorStart = 4.55;
   const accent = plan.scene.querySelector<HTMLElement>('[data-color-target], .coral, .name-period, .ps-section-number') ?? textLeaf(plan.fontTarget.target);
   const finalColor = getComputedStyle(accent).color;
   const rgb = (finalColor.match(/[\d.]+/g) ?? ['168', '201', '154']).slice(0, 3).map(Number);
@@ -612,7 +616,6 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   depart(zoe, () => point(component, 0, 0), 5.8);
 
   // Eli finishes with visible alignment axes, a measured gap, and a small snap.
-  const alignStart = 5.24;
   approach(eli, () => point(alignTarget, 0, 0.5), alignStart - 0.24);
   approach(remy, () => point(alignTarget, 1, 0.5), alignStart - 0.24, true);
   inspect('spacing', eli, () => point(alignTarget, 0, 0.5), alignStart, 5.99, [{ choice: 'left', at: 5.53 }, { choice: 'gap16', at: 5.76 }], 0);
@@ -680,6 +683,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
       if (next.y !== current.y) node.style.top = `${next.y}px`;
       if (next.x !== current.x || next.y !== current.y) invalidatePanel(node);
     });
+    plan.onTimedProgress?.();
   });
   if (plan.intro) {
     timeline.eventCallback('onComplete', () => {
@@ -704,6 +708,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
   useLayoutEffect(() => {
     const element = root.current;
     if (!element) return;
+    const flowStatus = element.dataset;
     const allTargets = Array.from(element.querySelectorAll<HTMLElement>('[data-assemble]'));
     makeReadable(allTargets);
     invalidateMotionFrame();
@@ -716,6 +721,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
     let playbackPaused = element.dataset.playback === 'paused';
     let introFinished = false;
     let introProgress = 0;
+    const timedProgress = new Map<HTMLElement, number>();
     const context = gsap.context(() => {
       media.add({ mobile: '(max-width: 767px)', desktop: '(min-width: 768px)', reduce: '(prefers-reduced-motion: reduce)' }, (mediaContext) => {
         invalidateMotionFrame();
@@ -754,6 +760,81 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
         let nearFrame: number | undefined;
         let idleBudgetStarted = 0;
         let pendingRefresh: gsap.core.Tween | undefined;
+        let noScroll = getMotionScrollLimit() <= 1;
+        if (!noScroll) timedProgress.clear();
+        const timedPlans = new Set<ScenePlan>();
+        let advancingTimedPlayback = false;
+        const publishFlow = (state: 'scroll' | 'playing' | 'complete') => {
+          const groups = records.filter(record => record.targets.length && !record.scene.hasAttribute('data-intro'));
+          const progress = state === 'complete' ? 100 : state === 'scroll' ? 0 : Math.round(100 * groups.reduce((sum, record) => sum + (record.plan?.timeline?.progress() ?? timedProgress.get(record.scene) ?? 0), 0) / Math.max(1, groups.length));
+          if (element.dataset.assemblyFlow === state && element.dataset.assemblyFlowProgress === String(progress)) return;
+          element.dataset.assemblyFlow = state;
+          element.dataset.assemblyFlowProgress = String(progress);
+          document.dispatchEvent(new CustomEvent('assembly:flow-state', { detail: { state, progress } }));
+        };
+        publishFlow(noScroll ? 'playing' : 'scroll');
+
+        // With the entire page in view there is no scroll distance to scrub.
+        // Keep the same crews and jobs, with up to three scenes overlapping.
+        function advanceTimedPlayback() {
+          if (!active || disposed || !noScroll || !introFinished || advancingTimedPlayback) return;
+          if (playbackPaused) return;
+          publishFlow(flowStatus.assemblyFlow === 'complete' ? 'complete' : 'playing');
+          timedPlans.forEach(plan => { if (plan.timeline?.progress() === 1) timedPlans.delete(plan); });
+          if (timedPlans.size >= 3) return;
+          const latest = Array.from(timedPlans).pop();
+          if (latest?.timeline && latest.timeline.progress() < 0.4) return;
+          advancingTimedPlayback = true;
+          try {
+            while (true) {
+              const record = records.find(next => next.targets.length && !next.scene.hasAttribute('data-intro') && !next.building && (!next.plan || !timedPlans.has(next.plan)) && (!next.plan?.timeline || next.plan.timeline.progress() < 1));
+              if (!record) {
+                publishFlow(timedPlans.size ? 'playing' : 'complete');
+                return;
+              }
+              publishFlow('playing');
+              const plan = record.plan ?? buildRecord(record);
+              if (!plan?.timeline) return;
+              if (plan.timeline.progress() >= 1) continue;
+              plan.trigger?.disable(false, false);
+              timedPlans.add(plan);
+              plan.timeline.play();
+              return;
+            }
+          } finally {
+            advancingTimedPlayback = false;
+          }
+        }
+        const syncPlaybackMode = () => {
+          const nextNoScroll = getMotionScrollLimit() <= 1;
+          if (nextNoScroll === noScroll) {
+            if (noScroll) advanceTimedPlayback();
+            return;
+          }
+          noScroll = nextNoScroll;
+          timedPlans.forEach(plan => plan.timeline?.pause());
+          timedPlans.clear();
+          if (!noScroll) timedProgress.clear();
+          publishFlow(noScroll ? 'playing' : 'scroll');
+          plans.forEach(plan => {
+            if (plan.intro) return;
+            plan.timed = noScroll;
+            if (noScroll) {
+              plan.trigger?.disable(false, false);
+              plan.timeline?.pause();
+            } else {
+              plan.trigger?.enable(false, false);
+              plan.trigger?.refresh();
+              plan.trigger?.update();
+            }
+          });
+          if (noScroll) advanceTimedPlayback();
+        };
+        const resizePlayback = () => {
+          invalidateMotionFrame();
+          syncPlaybackMode();
+        };
+        window.addEventListener('resize', resizePlayback);
         const sizeOf = (node: HTMLElement): Size => ({ width: node.offsetWidth, height: node.offsetHeight });
         const sameSize = (a: Size | undefined, b: Size) => Boolean(a && a.width === b.width && a.height === b.height);
         const captureSizes = (record: SceneRecord) => {
@@ -835,6 +916,8 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
           record.building = true;
           try {
             const plan = createScene(record.scene, record.targets, mobile);
+            plan.timed = noScroll && !plan.intro;
+            if (!plan.intro) plan.onTimedProgress = () => { if (noScroll) advanceTimedPlayback(); };
             record.plan = plan;
             const savedIntroProgress = introProgress;
             plan.onIntroProgress = progress => {
@@ -850,6 +933,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
             plan.onIntroComplete = () => {
               introFinished = true;
               queueIdleBuild();
+              advanceTimedPlayback();
             };
             measureScene(plan);
             animateScene(plan, mobile);
@@ -865,10 +949,22 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
               if (savedIntroProgress > 0) plan.timeline?.delay(0).progress(savedIntroProgress, false);
               if (playbackPaused) plan.timeline?.pause();
             } else {
-              // No layout was inserted: only this new trigger needs its first read.
-              // Updating now also handles a manual jump past its end before idle ran.
-              plan.trigger?.refresh();
-              plan.trigger?.update();
+              plan.timeline?.eventCallback('onComplete', () => {
+                if (noScroll && timedPlans.delete(plan)) {
+                  advanceTimedPlayback();
+                }
+              });
+              if (noScroll) {
+                plan.trigger?.disable(false, false);
+                plan.timeline?.pause();
+                const savedProgress = timedProgress.get(plan.scene);
+                if (savedProgress !== undefined) plan.timeline?.progress(savedProgress, false);
+              } else {
+                // No layout was inserted: only this new trigger needs its first read.
+                // Updating now also handles a manual jump past its end before idle ran.
+                plan.trigger?.refresh();
+                plan.trigger?.update();
+              }
             }
             captureSizes(record);
             if (typeof ResizeObserver !== 'undefined') {
@@ -890,6 +986,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
             return plan;
           } finally {
             record.building = false;
+            if (noScroll) advanceTimedPlayback();
           }
         }) as (record: SceneRecord) => ScenePlan | undefined;
 
@@ -897,8 +994,16 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
           plans.forEach(plan => { if (!plan.introComplete) measureScene(plan); });
           records.forEach(record => { if (record.plan) captureSizes(record); });
         };
-        const pauseIntro = () => { playbackPaused = true; plans.forEach(plan => { if (plan.intro && !plan.introComplete) plan.timeline?.pause(); }); };
-        const resumeIntro = () => { playbackPaused = false; plans.forEach(plan => { if (plan.intro && !plan.introComplete) plan.timeline?.resume(); }); };
+        const pauseIntro = () => {
+          playbackPaused = true;
+          plans.forEach(plan => { if ((plan.intro && !plan.introComplete) || timedPlans.has(plan)) plan.timeline?.pause(); });
+        };
+        const resumeIntro = () => {
+          playbackPaused = false;
+          plans.forEach(plan => { if (plan.intro && !plan.introComplete) plan.timeline?.resume(); });
+          timedPlans.forEach(plan => plan.timeline?.resume());
+          advanceTimedPlayback();
+        };
         document.addEventListener('assembly:playback-pause', pauseIntro);
         document.addEventListener('assembly:playback-resume', resumeIntro);
         ScrollTrigger.addEventListener('refreshInit', measure);
@@ -907,6 +1012,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
           focusedPlan = undefined;
           if (!plan || plan.intro) return;
           gsap.set(plan.overlay, { autoAlpha: 1 });
+          if (noScroll) { advanceTimedPlayback(); return; }
           plan.trigger?.enable(false, false);
           plan.trigger?.refresh();
         }) as () => void;
@@ -927,6 +1033,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
           pendingRefresh?.kill();
           pendingRefresh = undefined;
           plans.forEach(plan => plan.syncCursorControls?.());
+          syncPlaybackMode();
           revealFocusedTarget(document.activeElement, true);
         };
         const onFocusIn = (event: FocusEvent) => revealFocusedTarget(event.target);
@@ -971,6 +1078,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
         const introRecord = records.find(record => record.targets.length && record.scene.hasAttribute('data-intro'));
         if (introRecord) buildRecord(introRecord);
         else introFinished = true;
+        if (noScroll) advanceTimedPlayback();
         // Retained focus survives a media rebuild without another focusin event.
         revealFocusedTarget(document.activeElement);
         document.fonts?.ready.then(() => {
@@ -991,6 +1099,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
 
         return () => {
           active = false;
+          if (noScroll) plans.forEach(plan => { if (!plan.intro && plan.timeline) timedProgress.set(plan.scene, plan.timeline.progress()); });
           if (idleHandle !== undefined) window.cancelIdleCallback(idleHandle);
           if (idleTimer !== undefined) clearTimeout(idleTimer);
           for (const frame of [idleFrame, nearFrame]) if (frame !== undefined) cancelAnimationFrame(frame);
@@ -1007,8 +1116,11 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
           element.removeEventListener('focusin', onFocusIn);
           element.removeEventListener('focusout', onFocusOut);
           window.removeEventListener('scroll', scheduleNearScan);
+          window.removeEventListener('resize', resizePlayback);
           plans.forEach(({ constructionCleanup, overlay, caret }) => { cancelMotionRead(caret); constructionCleanup?.(); overlay.remove(); });
           invalidateMotionFrame();
+          delete element.dataset.assemblyFlow;
+          delete element.dataset.assemblyFlowProgress;
         };
       });
     }, element);
