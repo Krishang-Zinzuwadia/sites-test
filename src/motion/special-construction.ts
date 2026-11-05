@@ -97,6 +97,7 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     }
     return geometry.point
   }
+  const workers: Worker[] = []
   const worker = (name: string, model: string, painter = false): Worker => {
     const original = collaborators.find(actor => actor.name === model) ?? collaborators[0]
     const actor = { ...original, name }
@@ -105,12 +106,14 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     if (painter) cursor.classList.add('special-builder-painter')
     layer.append(cursor)
     gsap.set(cursor, { autoAlpha: 0 })
-    return {
+    const person: Worker = {
       actor, cursor, finish: start, action: cursor.querySelector<HTMLElement>('.assembly-cursor-action'),
       setX: gsap.quickSetter(cursor, 'x', 'px') as (value: number) => void,
       setY: gsap.quickSetter(cursor, 'y', 'px') as (value: number) => void,
       x: NaN, y: NaN, label: '', edge: '', vertical: '', revision: 0,
     }
+    workers.push(person)
+    return person
   }
   const setCursor = (person: Worker, point: Point, action: string) => {
     if (disposed) return
@@ -243,7 +246,17 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     }
   }
   measure()
+  const restoreCursors = () => {
+    if (disposed) return
+    tiles.forEach(tile => cancelMotionRead(tile))
+    workers.forEach(person => {
+      ++person.revision
+      if (Number.isFinite(person.x)) person.setX(person.x)
+      if (Number.isFinite(person.y)) person.setY(person.y)
+    })
+  }
   ScrollTrigger.addEventListener('refreshInit', measure)
+  ScrollTrigger.addEventListener('refresh', restoreCursors)
   document.fonts?.addEventListener('loadingdone', measure)
 
   const iconPoint = (tile: Tile): Point => ({ x: tile.iconBox.x + tile.iconBox.width / 2, y: tile.iconBox.y + tile.iconBox.height / 2 })
@@ -466,6 +479,7 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     disposed = true
     tiles.forEach(tile => { cancelMotionRead(tile); releaseConstructionMenu(tile.menu) })
     ScrollTrigger.removeEventListener('refreshInit', measure)
+    ScrollTrigger.removeEventListener('refresh', restoreCursors)
     document.fonts?.removeEventListener('loadingdone', measure)
     layer.remove()
   }
