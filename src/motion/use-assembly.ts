@@ -262,12 +262,11 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     }
     return control;
   };
-  plan.syncCursorControls = () => cursorControls.forEach((control, cursor) => {
-    // GSAP can restore an entire saved transform during an explicit refresh.
-    // Resync once there, rather than asking GSAP for every cursor every frame.
-    control.x = Number(gsap.getProperty(cursor, 'x'));
-    control.y = Number(gsap.getProperty(cursor, 'y'));
-    control.revision++;
+  plan.syncCursorControls = () => cursorControls.forEach(control => {
+    // Refresh can restore a birth startAt while suppressing the flight writer.
+    // Our last rendered work position remains authoritative, even while paused.
+    control.setX(control.x);
+    control.setY(control.y);
   });
   const writeCursorLabels = (cursor: HTMLElement, control: CursorControl, left: number, top: number, width: number, height: number) => {
     const edge = left + control.x > width - 145 ? 'right' : 'left';

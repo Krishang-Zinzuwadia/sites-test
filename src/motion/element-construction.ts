@@ -408,7 +408,17 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     }
   }
   measure()
+  const restoreCursors = () => {
+    if (disposed) return
+    jobs.forEach(job => cancelMotionRead(job))
+    workers.forEach(worker => {
+      ++worker.revision
+      if (Number.isFinite(worker.x)) worker.setX(worker.x)
+      if (Number.isFinite(worker.y)) worker.setY(worker.y)
+    })
+  }
   ScrollTrigger.addEventListener('refreshInit', measure)
+  ScrollTrigger.addEventListener('refresh', restoreCursors)
   document.fonts?.addEventListener('loadingdone', measure)
   gsap.set(leaves, { opacity: 0 })
   gsap.set(workers.map(worker => worker.cursor), { autoAlpha: 0, scale: 0.3 })
@@ -532,6 +542,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     jobs.forEach(job => { cancelMotionRead(job); if (job.menu) releaseConstructionMenu(job.menu) })
     specialCleanup()
     ScrollTrigger.removeEventListener('refreshInit', measure)
+    ScrollTrigger.removeEventListener('refresh', restoreCursors)
     document.fonts?.removeEventListener('loadingdone', measure)
     layer.remove()
   }
