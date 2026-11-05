@@ -21,3 +21,5 @@ html.auto-tour-running{scroll-behavior:auto}.site-root[data-stage=loading] [data
 @media(max-height:500px) and (orientation:landscape){.canvas-meta{margin-top:18px;margin-bottom:12px}.hero-banner{height:clamp(60px,calc(100svh - 204px),190px)}}
 
 .chrome-construction-overlay{z-index:80}
+
+@media(max-width:640px){.assembly-dock{width:min(396px,calc(100vw - 24px));height:44px;bottom:15px;padding:0 6px;gap:3px}.collaborator-stack{flex:0 0 auto}.collaborator-stack span{width:16px;height:16px;font-size:6px;flex-shrink:0}.collaborator-stack .team-count{width:23px}.dock-status{min-width:0;flex:1 1 auto;font-size:6.5px}.dock-status>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}.dock-button{width:24px;flex:0 0 24px}.dock-divider{flex:0 0 1px;margin:0 1px}.scroll-progress{width:25px;flex:0 0 25px;font-size:8px}}

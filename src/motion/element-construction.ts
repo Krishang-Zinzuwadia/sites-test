@@ -333,23 +333,32 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     const box = placeMenu(job)
     return { x: box.x + 64, y: box.y + 82 }
   }
+  let geometryRevision = 0
   const curvedTravel = (job: Job, from: () => Point, to: () => Point, at: number, duration: number, action: string) => {
     const travel = { value: 0 }
     let origin: Point | undefined
-    timeline.call(() => { origin ??= from() }, [], at)
+    let originRevision = -1
+    const flightOrigin = () => {
+      if (!origin || originRevision !== geometryRevision) {
+        origin = from()
+        originRevision = geometryRevision
+      }
+      return origin
+    }
+    timeline.call(flightOrigin, [], at)
     timeline.fromTo(travel, { value: 0 }, {
       value: 1, duration, ease: 'power2.inOut', immediateRender: false,
       onUpdate: () => {
         if (disposed) return
-        origin ??= from()
+        const departure = flightOrigin()
         const target = to(), t = travel.value, inverse = 1 - t
-        const distance = Math.hypot(target.x - origin.x, target.y - origin.y)
+        const distance = Math.hypot(target.x - departure.x, target.y - departure.y)
         const bend = Math.min(82, Math.max(12, distance * 0.16)) * (job.worker.artwork ? -1 : 1)
-        const controlX = (origin.x + target.x) / 2 + bend
-        const controlY = (origin.y + target.y) / 2 - Math.abs(bend)
+        const controlX = (departure.x + target.x) / 2 + bend
+        const controlY = (departure.y + target.y) / 2 - Math.abs(bend)
         setCursor(job,
-          inverse * inverse * origin.x + 2 * inverse * t * controlX + t * t * target.x,
-          inverse * inverse * origin.y + 2 * inverse * t * controlY + t * t * target.y,
+          inverse * inverse * departure.x + 2 * inverse * t * controlX + t * t * target.x,
+          inverse * inverse * departure.y + 2 * inverse * t * controlY + t * t * target.y,
           action,
         )
       },
@@ -403,6 +412,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
         else node.style.removeProperty('transform')
       })
       invalidateMotionFrame()
+      ++geometryRevision
     }
   }
   measure()
