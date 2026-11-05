@@ -226,6 +226,8 @@
 /* A compact, familiar multiplayer cursor: an arrow and a small attached name. */
 .assembly-cursor {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 20px;
   height: 25px;
   z-index: 8;

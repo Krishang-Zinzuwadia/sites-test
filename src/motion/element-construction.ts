@@ -2,7 +2,7 @@ import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { collaborators, createCursor, type Collaborator } from './design-tools'
 import { addSpecialConstruction } from './special-construction'
-import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement'
+import { constructionMenuPosition, keepConstructionMenuInView, releaseConstructionMenu } from './menu-placement'
 import { getMotionRect, getCreationSourcePoint, invalidateMotionFrame } from './motion-frame'
 import { queueMotionRead, cancelMotionRead } from './motion-read'
 import './element-construction.css'
@@ -34,6 +34,7 @@ type Job = {
   at: number
   weight: number
   box: Box
+  workBox: Box
   frame: HTMLDivElement
   ghost?: HTMLDivElement
   copy?: HTMLSpanElement
@@ -84,8 +85,9 @@ function paintedEmptyLeaf(node: Element): boolean {
 function inventory(scene: HTMLElement, targets: HTMLElement[], skip: HTMLElement[]): Piece[] {
   const selected: Piece[] = []
   const seen = new Set<Element>()
+  const claimedAtoms: Element[] = []
   const visit = (node: Element, root: HTMLElement) => {
-    if (seen.has(node) || node.matches(excludedSelector) || skip.some(excluded => excluded === node || excluded.contains(node))) return
+    if (seen.has(node) || claimedAtoms.some(atom => atom.contains(node)) || node.matches(excludedSelector) || skip.some(excluded => excluded === node || excluded.contains(node))) return
     seen.add(node)
     const owningScene = node.closest('.assembly-scene')
     if (owningScene && owningScene !== scene) return
@@ -99,15 +101,19 @@ function inventory(scene: HTMLElement, targets: HTMLElement[], skip: HTMLElement
     if ((node !== root || leafTarget) && (atomic || text)) {
       // Do not create hidden DOM, or descendants of an already selected atom.
       const style = getComputedStyle(node)
-      if (style.display !== 'none' && node.getClientRects().length) selected.push(node as Piece)
+      if (style.display === 'none' || !node.getClientRects().length) return
+      selected.push(node as Piece)
+      if (atomic) claimedAtoms.push(node)
       // A formatted text run may contain an image. Keep that image hidden until
       // a separate paste job, after its containing text run is complete.
       if (text && !atomic) {
-        for (const image of Array.from(node.querySelectorAll(imageSelector))) {
+        for (const image of Array.from(node.querySelectorAll(atomicSelector))) {
           if (seen.has(image) || image.closest('[data-build-tech], [data-build-grid]') || skip.some(excluded => excluded.contains(image))) continue
-          const ancestor = image.parentElement?.closest(imageSelector)
+          const ancestor = image.parentElement?.closest(atomicSelector)
           if (ancestor && node.contains(ancestor)) continue
+          if (getComputedStyle(image).display === 'none' || !image.getClientRects().length) continue
           seen.add(image)
+          claimedAtoms.push(image)
           selected.push(image as Piece)
         }
       }
@@ -174,7 +180,16 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
   })
   const jobs: Job[] = []
   const artQueues = Array.from({ length: innerWidth < 768 ? 1 : 2 }, () => 0)
-  for (const leaf of leaves) {
+  // The large image gives a card its identity. Paste it before small corner
+  // icons consume the same clipboard lane, while the copy crew works in parallel.
+  const primaryArtwork = new Set(leaves.filter(leaf => {
+    if (!(leaf.matches(imageSelector) || (leaf.matches(atomicSelector) && leaf.querySelector(imageSelector))) || leaf.classList.contains('lucide')) return false
+    const rect = leaf.getBoundingClientRect()
+    return (rect.width > 64 || rect.height > 64) && !leaves.some(other => other !== leaf && other.contains(leaf))
+  }))
+  const orderedLeaves = [...leaves.filter(leaf => primaryArtwork.has(leaf)), ...leaves.filter(leaf => !primaryArtwork.has(leaf))]
+  let primaryArtworkReady = 0
+  for (const leaf of orderedLeaves) {
     const text = (leaf.textContent ?? '').replace(/\s+/g, ' ').trim()
     const art = leaf.matches(atomicSelector) || paintedEmptyLeaf(leaf)
     const pasted = art && (leaf.matches(imageSelector) || Boolean(leaf.querySelector(imageSelector)))
@@ -182,7 +197,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     const available = workers.filter(worker => worker.artwork === art)
     const ancestor = jobs.find(job => job.leaf.contains(leaf))
     const lane = artQueues.reduce((best, value, index) => value < artQueues[best] ? index : best, 0)
-    const ready = Math.max(ancestor ? ancestor.at + ancestor.weight + 0.18 : 0, pasted ? artQueues[lane] : 0)
+    const ready = Math.max(ancestor ? ancestor.at + ancestor.weight + 0.18 : 0, pasted ? artQueues[lane] : 0, pasted && !primaryArtwork.has(leaf) ? primaryArtworkReady : 0)
     const worker = available.reduce((best, next) => Math.max(next.load, ready) < Math.max(best.load, ready) ? next : best)
     const weight = art ? pasted ? 1.65 : 0.8 : Math.min(2, 1.15 + text.length / 130)
     const at = Math.max(worker.load, ready)
@@ -190,6 +205,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     // collaborator can leave for another assignment.
     worker.load = at + weight + 0.85 + 0.18
     if (pasted) artQueues[lane] = at + weight + 0.18
+    if (primaryArtwork.has(leaf)) primaryArtworkReady = Math.max(primaryArtworkReady, at + weight + .18)
     const frame = makeNode('div', 'element-builder-frame')
     frame.style.setProperty('--element-builder-color', worker.actor.color)
     const caret = makeNode('span', 'element-builder-caret')
@@ -210,6 +226,8 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     if (pasted) {
       menu = makeNode('div', 'element-builder-context-menu')
       menu.dataset.constructionMenu = ''
+      menu.dataset.menuActive = 'false'
+      menu.classList.add('construction-menu-inactive')
       const heading = makeNode('div', 'element-builder-context-heading')
       heading.textContent = 'CLIPBOARD'
       const cut = makeNode('div', 'element-builder-context-row element-builder-context-row--muted')
@@ -226,7 +244,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     layer.append(frame)
     const job: Job = {
       leaf, text, kind: art ? 'art' : formatted ? 'formatted' : 'copy', action: actionFor(leaf, art, text),
-      worker, at, weight, box: { x: 0, y: 0, width: 0, height: 0 }, frame, ghost, copy, caret, menu, paste, pulse, pasted,
+      worker, at, weight, box: { x: 0, y: 0, width: 0, height: 0 }, workBox: { x: 0, y: 0, width: 0, height: 0 }, frame, ghost, copy, caret, menu, paste, pulse, pasted,
       progress: { write: 0 },
       typedCount: -1, caretPositions: new Map(),
       natural: { x: numericProperty(leaf, 'x', 0), y: numericProperty(leaf, 'y', 0), scaleX: numericProperty(leaf, 'scaleX', 1), scaleY: numericProperty(leaf, 'scaleY', 1) },
@@ -291,14 +309,21 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
       setCursor(job, box.x + box.width * progress.write, box.y + Math.min(box.height, 18))
     }
   }
-  const cursorPoint = (worker: Worker): Point => ({ x: Number.isFinite(worker.x) ? worker.x : 0, y: Number.isFinite(worker.y) ? worker.y : 0 })
+  const cursorPoint = (worker: Worker): Point => {
+    const source = liveSource()
+    return { x: Number.isFinite(worker.x) ? worker.x : source.x, y: Number.isFinite(worker.y) ? worker.y : source.y }
+  }
   const anchor = (job: Job): Point => job.kind === 'art'
     ? { x: job.box.x + job.box.width / 2, y: job.box.y + job.box.height / 2 }
     : { x: job.box.x + 2, y: job.box.y + Math.min(16, job.box.height / 2) }
   const placeMenu = (job: Job, lock = false): Box => {
-    if (job.menuBox && !lock && job.menu?.dataset.menuReserved === 'true') return job.menuBox
+    if (job.menuBox && !lock && job.menu?.dataset.menuReserved === 'true') {
+      job.menuBox = keepConstructionMenuInView(job.menu, scene, job.menuBox)
+      placeBox(job.menu, job.menuBox)
+      return job.menuBox
+    }
     const point = anchor(job)
-    const box = job.menu ? constructionMenuPosition(job.menu, scene, point, lock) : { ...point, width: 148, height: 100 }
+    const box = job.menu ? constructionMenuPosition(job.menu, scene, point, lock, job.workBox) : { ...point, width: 148, height: 100 }
     job.menuBox = box
     if (job.menu) placeBox(job.menu, box)
     if (job.pulse) Object.assign(job.pulse.style, { left: `${point.x - 9}px`, top: `${point.y - 9}px` })
@@ -344,13 +369,14 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
         const box = relativeRect(job.leaf.getBoundingClientRect(), host)
         const type = job.ghost || job.kind === 'formatted' ? getComputedStyle(job.leaf) : undefined
         return {
-          job, box, typography: job.ghost ? typeProperties.map(property => type!.getPropertyValue(property)) : [],
+          job, box, workBox: relativeRect((job.leaf.closest<HTMLElement>('[data-assemble]') ?? job.leaf).getBoundingClientRect(), host), typography: job.ghost ? typeProperties.map(property => type!.getPropertyValue(property)) : [],
           padding: job.ghost ? paddingProperties.map(property => type!.getPropertyValue(property)) : [],
           borderWidth: type?.borderWidth ?? '', caretHeight: Math.min(box.height, parseFloat(type?.fontSize ?? '0') * 1.05),
         }
       })
-      measurements.forEach(({ job, box, typography, padding, borderWidth, caretHeight }) => {
+      measurements.forEach(({ job, box, workBox, typography, padding, borderWidth, caretHeight }) => {
         job.box = box
+        job.workBox = workBox
         cancelMotionRead(job)
         job.caretPositions.clear()
         placeBox(job.frame, job.box)
@@ -386,6 +412,19 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
   gsap.set(workers.map(worker => worker.cursor), { autoAlpha: 0, scale: 0.3 })
   gsap.set(jobs.flatMap(job => [job.frame, ...(job.ghost ? [job.ghost] : []), ...(job.menu ? [job.menu] : []), ...(job.pulse ? [job.pulse] : [])]), { autoAlpha: 0 })
 
+  const menuWindows: { job: Job; open: number; close: number }[] = []
+  const menuState = (job: Job, active: boolean) => {
+    if (!job.menu) return
+    if (job.menu.dataset.menuActive !== String(active)) {
+      job.menu.dataset.menuActive = String(active)
+      job.menu.classList.toggle('construction-menu-inactive', !active)
+    } else if (!active && job.menu.dataset.menuReserved !== 'true') return
+    if (active) placeMenu(job, job.menu.dataset.menuReserved !== 'true')
+    else {
+      releaseConstructionMenu(job.menu)
+      job.menuBox = undefined
+    }
+  }
   for (const job of jobs) {
     const at = start + job.at * unit
     const duration = job.weight * unit
@@ -399,11 +438,12 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
       const point = liveSource()
       setCursor(job, point.x, point.y, `Task ${taskNumber} · ${job.action}`)
     }, [], at)
-    timeline.fromTo(job.worker.cursor, { autoAlpha: 0, scale: 0.18 }, { autoAlpha: 1, scale: 1, duration: Math.min(0.06, flight * 0.35), immediateRender: false }, at)
+    timeline.fromTo(job.worker.cursor, { autoAlpha: 0, scale: 0.18, x: () => liveSource().x, y: () => liveSource().y }, { autoAlpha: 1, scale: 1, duration: Math.min(0.06, flight * 0.35), immediateRender: false }, at)
     curvedTravel(job, liveSource, () => anchor(job), at, flight, `Task ${taskNumber} · ${job.action}`)
 
     if (job.kind === 'art' && job.pasted) {
       const clickAt = workStart + writing * 0.52
+      menuWindows.push({ job, open: workStart + writing * .08, close: clickAt + writing * .22 })
       timeline.call(() => {
         placeMenu(job, true)
         const point = anchor(job)
@@ -413,8 +453,8 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
       if (job.menu) {
         timeline.fromTo(job.menu, { autoAlpha: 0, scale: 0.97, y: -3 }, {
           autoAlpha: 1, scale: 1, y: 0, duration: writing * 0.12, ease: 'power2.out', immediateRender: false,
-          onStart: () => document.dispatchEvent(new CustomEvent('assembly:menu-open', { detail: { menu: job.menu, owner: job.worker.cursor } })),
-          onReverseComplete: () => { if (job.menu) releaseConstructionMenu(job.menu) },
+          onStart: () => { menuState(job, true); document.dispatchEvent(new CustomEvent('assembly:menu-open', { detail: { menu: job.menu, owner: job.worker.cursor } })) },
+          onReverseComplete: () => menuState(job, false),
         }, workStart + writing * 0.08)
       }
       curvedTravel(job, () => anchor(job), () => pastePoint(job), workStart + writing * 0.2, writing * 0.32, 'Choose Paste')
@@ -436,9 +476,10 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
       if (job.menu) timeline.to(job.menu, {
         autoAlpha: 0, scale: 0.98, duration: writing * 0.12, immediateRender: false,
         onComplete: () => {
-          if (job.menu) releaseConstructionMenu(job.menu)
+          menuState(job, false)
           document.dispatchEvent(new CustomEvent('assembly:menu-close', { detail: { menu: job.menu, owner: job.worker.cursor } }))
         },
+        onReverseComplete: () => menuState(job, true),
       }, clickAt + writing * 0.1)
     } else if (job.kind === 'art') {
       timeline.fromTo(job.frame, { autoAlpha: 0 }, { autoAlpha: 0.85, duration: writing * 0.1, immediateRender: false }, workStart)
@@ -476,9 +517,17 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     timeline.to(job.worker.cursor, { scale: 0.18, autoAlpha: 0, duration: .08 * unit, immediateRender: false }, returnAt + returnDuration)
   }
 
+  // A time-derived guard also runs after fast seeks which skip individual
+  // open/close callbacks. It never hides a menu during its real Paste task.
+  const menuClock = { value: 0 }
+  timeline.to(menuClock, { value: 1, duration: timeline.duration(), ease: 'none', onUpdate: () => {
+    const time = timeline.time()
+    menuWindows.forEach(({ job, open, close }) => menuState(job, time >= open && time < close))
+  } }, 0)
+
   return () => {
     disposed = true
-    jobs.forEach(job => cancelMotionRead(job))
+    jobs.forEach(job => { cancelMotionRead(job); if (job.menu) releaseConstructionMenu(job.menu) })
     specialCleanup()
     ScrollTrigger.removeEventListener('refreshInit', measure)
     document.fonts?.removeEventListener('loadingdone', measure)

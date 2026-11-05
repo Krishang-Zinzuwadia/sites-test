@@ -3,7 +3,7 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { collaborators, createCursor, createToolPanel } from './design-tools';
 import { addElementConstruction } from './element-construction';
-import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement';
+import { constructionMenuPosition, keepConstructionMenuInView, releaseConstructionMenu } from './menu-placement';
 import { getCreationSourcePoint, getMotionRect, getMotionScrollLimit, getMotionViewport, invalidateMotionFrame, retainMotionFrame } from './motion-frame';
 import { cancelMotionRead, queueMotionRead } from './motion-read';
 import './assembly.css';
@@ -184,19 +184,36 @@ function usableViewport(scene: HTMLElement) {
 }
 function sceneViewportLines(scene: HTMLElement, mobile: boolean) {
   const band = usableViewport(scene);
-  return { start: band.top + band.height * (mobile ? 0.65 : 0.75), end: band.top + band.height * (mobile ? 0.4 : 0.45) };
+  return { start: band.top + band.height * (mobile ? 0.65 : 0.75), end: band.top + band.height * (mobile ? 0.4 : 0.45), band };
+}
+function sceneScrollBounds(scene: HTMLElement, mobile: boolean) {
+  const rect = getMotionRect(scene), view = getMotionViewport(), limit = getMotionScrollLimit();
+  const top = rect.top + view.scrollY, lines = sceneViewportLines(scene, mobile);
+  const minimum = Math.min(160, Math.max(64, lines.band.height * 0.18));
+  const naturalStart = top - lines.start;
+  let end = Math.min(limit, Math.max(0, top + rect.height - lines.end));
+  // Tall windows can already contain whole scenes before scrolling starts.
+  // Give them a real construction interval rather than a zero-length trigger.
+  if (naturalStart <= 0) end = Math.min(limit, Math.max(end, minimum));
+  let start = Math.min(end, Math.max(0, naturalStart));
+  if (end - start < minimum) {
+    // The footer finishes inside the actual page bounds; no artificial blank
+    // half-screen is needed below it to move it through the central trigger.
+    const firstVisible = Math.min(end, Math.max(0, top - lines.band.bottom));
+    start = Math.min(start, Math.max(firstVisible, end - minimum));
+  }
+  return { start, end: Math.max(start + 0.001, end) };
 }
 function sourcePoint(plan: ScenePlan, at: number, live = false): Point {
   if (!live && plan.sourceOrigins.has(at)) return plan.sourceOrigins.get(at)!;
   const source = getCreationSourcePoint(plan.scene);
   if (live || plan.intro) return source;
-  const scene = getMotionRect(plan.scene), view = getMotionViewport(), documentTop = scene.top + view.scrollY;
-  const maxScroll = getMotionScrollLimit();
+  const view = getMotionViewport();
   // ScrollTrigger can exist before refresh has assigned both numeric bounds.
   // Its presence alone does not mean the fallback geometry is unnecessary.
-  const lines = plan.trigger?.start == null || plan.trigger?.end == null ? sceneViewportLines(plan.scene, plan.mobile) : undefined;
-  const start = plan.trigger?.start ?? Math.min(maxScroll, Math.max(0, documentTop - lines!.start));
-  const end = plan.trigger?.end ?? Math.min(maxScroll, Math.max(start + 1, documentTop + scene.height - lines!.end));
+  const bounds = plan.trigger?.start == null || plan.trigger?.end == null ? sceneScrollBounds(plan.scene, plan.mobile) : undefined;
+  const start = plan.trigger?.start ?? bounds!.start;
+  const end = plan.trigger?.end ?? bounds!.end;
   // Future scenes are measured before they are on screen. Predict the scroll
   // position at this emission, rather than accidentally using mount-time scroll.
   const birthScroll = start + (end - start) * Math.min(1, Math.max(0, at / sceneUnits));
@@ -284,11 +301,19 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
       if (mode === 'birth') {
         origin = sourcePoint(plan, start, true);
         setX(origin.x); setY(origin.y);
-        gsap.set(cursor, { scale: 0.15, autoAlpha: 1 });
       } else if (!origin || plan.trigger?.direction !== -1) {
         origin = { x: control.x, y: control.y };
       }
     }, [], start);
+    if (mode === 'birth') {
+      // Position belongs to the timeline itself: refresh/seek can suppress calls,
+      // but must never reveal a cursor at its default scene-top coordinates.
+      timeline.fromTo(cursor, {
+        x: () => sourcePoint(plan, start, true).x,
+        y: () => sourcePoint(plan, start, true).y,
+        scale: 0.15, autoAlpha: 0,
+      }, { autoAlpha: 1, duration: Math.min(0.035, duration * 0.15), immediateRender: false }, start);
+    }
     timeline.fromTo(progress, { value: 0 }, { value: 1, duration, ease: 'power1.inOut', immediateRender: false, onUpdate: () => {
       const from = origin ?? sourcePoint(plan, start, true), to = destination(), p = progress.value;
       const distance = Math.hypot(to.x - from.x, to.y - from.y);
@@ -307,25 +332,28 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   const returnHome = (cursor: HTMLElement, start: number) => curve(cursor, () => sourcePoint(plan, start, true), start, 0.4, 'return');
   const menuOwners: Record<ToolKind, HTMLDivElement> = { layout: mia, text: noah, font: noah, color: ava, spacing: eli };
   const menuAnchors = new Map<ToolKind, Point>();
+  const menuWindows: { kind: ToolKind; start: number; end: number }[] = [];
   const placePanel = (kind: ToolKind, capture = false) => {
     const node = plan.panels[kind], owner = menuOwners[kind];
     if (capture || !menuAnchors.has(kind)) {
       const control = cursorControl(owner);
       menuAnchors.set(kind, { x: control.x, y: control.y });
     }
-    const chosen = constructionMenuPosition(node, plan.scene, menuAnchors.get(kind)!);
+    const work = kind === 'layout' ? first : kind === 'text' || kind === 'font' ? plan.fontTarget : kind === 'color' ? component : alignTarget;
+    const chosen = constructionMenuPosition(node, plan.scene, menuAnchors.get(kind)!, true, work.box);
     Object.assign(node.style, { left: `${chosen.x}px`, top: `${chosen.y}px` });
     invalidatePanel(node);
   };
-  const menuClose = (node: HTMLElement) => { node.dataset.open = 'false'; node.classList.add('assembly-inspector-blocked'); releaseConstructionMenu(node); };
+  const menuClose = (node: HTMLElement) => { node.dataset.open = 'false'; node.dataset.menuActive = 'false'; node.classList.add('assembly-inspector-blocked'); releaseConstructionMenu(node); };
   const panel = (kind: ToolKind, start: number, end: number) => {
     const node = plan.panels[kind];
+    menuWindows.push({ kind, start, end: end + 0.08 });
     node.dataset.constructionMenu = kind;
     gsap.set(node, { transformOrigin: '12px 12px' });
     timeline.call(() => {
       if (plan.trigger?.direction === -1) { menuClose(node); return; }
       placePanel(kind, true);
-      node.classList.remove('assembly-inspector-blocked'); node.dataset.open = 'true';
+      node.classList.remove('assembly-inspector-blocked'); node.dataset.open = 'true'; node.dataset.menuActive = 'true';
       document.dispatchEvent(new CustomEvent('assembly:menu-open', { detail: { menu: node, owner: plan.scene } }));
     }, [], start);
     timeline.fromTo(node, { autoAlpha: 0, x: 0, y: 5, scale: 0.95 }, { autoAlpha: 1, x: 0, y: 0, scale: 1, duration: 0.15, ease: 'power2.out', immediateRender: false }, start);
@@ -616,13 +644,24 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     overlay: plan.overlay,
     timeline,
     targets: plan.targets.map(({ target }) => target),
-    start: 4.05,
+    start: 3.15,
     end: 9.65,
     skip: [plan.copyLeaf],
   });
   timeline.duration(plan.intro ? 8 : 10);
   timeline.eventCallback('onUpdate', () => {
     if (plan.intro) plan.onIntroProgress?.(timeline.progress());
+    const time = timeline.time();
+    panelEntries.forEach(([kind, node]) => {
+      const active = menuWindows.some(window => window.kind === kind && time >= window.start && time < window.end);
+      if (!active) {
+        if (node.dataset.open !== 'false') menuClose(node);
+      } else if (node.dataset.open !== 'true') {
+        placePanel(kind, true);
+        node.dataset.open = 'true'; node.dataset.menuActive = 'true';
+        node.classList.remove('assembly-inspector-blocked');
+      }
+    });
     // Keep action pills on the canvas side of the pointer on a narrow viewport.
     const host = getMotionRect(plan.scene), view = getMotionViewport();
     // Collect geometry before data-attribute or clamp writes can dirty style.
@@ -637,11 +676,11 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     panelEntries.forEach(([, node]) => {
       if (node.dataset.open !== 'true') return;
       const rect = panelRects.get(node)!;
-      const dx = Math.max(8, Math.min(view.width - rect.width - 8, rect.left)) - rect.left;
-      const dy = Math.max(10, Math.min(view.height - rect.height - (mobile ? 83 : 20), rect.top)) - rect.top;
-      if (dx) node.style.left = `${parseFloat(node.style.left) + dx}px`;
-      if (dy) node.style.top = `${parseFloat(node.style.top) + dy}px`;
-      if (dx || dy) invalidatePanel(node);
+      const current = { x: parseFloat(node.style.left), y: parseFloat(node.style.top), width: rect.width, height: rect.height };
+      const next = keepConstructionMenuInView(node, plan.scene, current);
+      if (next.x !== current.x) node.style.left = `${next.x}px`;
+      if (next.y !== current.y) node.style.top = `${next.y}px`;
+      if (next.x !== current.x || next.y !== current.y) invalidatePanel(node);
     });
   });
   if (plan.intro) {
@@ -656,8 +695,8 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   } else {
     plan.trigger = ScrollTrigger.create({
       trigger: plan.scene, animation: timeline,
-      start: () => `clamp(top ${sceneViewportLines(plan.scene, mobile).start}px)`,
-      end: () => `clamp(bottom ${sceneViewportLines(plan.scene, mobile).end}px)`,
+      start: () => sceneScrollBounds(plan.scene, mobile).start,
+      end: () => sceneScrollBounds(plan.scene, mobile).end,
       scrub: 0.6, invalidateOnRefresh: true,
     });
   }

@@ -1,7 +1,7 @@
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { collaborators, createCursor, type Collaborator } from './design-tools'
-import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement'
+import { constructionMenuPosition, keepConstructionMenuInView, releaseConstructionMenu } from './menu-placement'
 import { getMotionRect, getCreationSourcePoint, invalidateMotionFrame } from './motion-frame'
 import { queueMotionRead, cancelMotionRead } from './motion-read'
 import './special-construction.css'
@@ -142,7 +142,7 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
   const arrive = (person: Worker, to: () => Point, at: number, duration: number, action: string) => {
     if (!person.last) {
       timeline.call(() => setCursor(person, liveSource(), action), [], at)
-      timeline.fromTo(person.cursor, { autoAlpha: 0, scale: .18 }, { autoAlpha: 1, scale: 1, duration: .035, immediateRender: false }, at)
+      timeline.fromTo(person.cursor, { autoAlpha: 0, scale: .18, x: () => liveSource().x, y: () => liveSource().y }, { autoAlpha: 1, scale: 1, duration: .035, immediateRender: false }, at)
       travel(person, liveSource, to, at + .035, Math.max(.02, duration - .035), action)
     } else travel(person, person.last, to, at, duration, action)
   }
@@ -186,6 +186,8 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     ghost.append(copy, caret)
     const menu = make('special-builder-paste-menu')
     menu.dataset.constructionMenu = ''
+    menu.dataset.menuActive = 'false'
+    menu.classList.add('construction-menu-inactive')
     menu.innerHTML = '<div class="special-builder-menu-heading">CLIPBOARD</div><div class="special-builder-menu-row is-muted"><span>Cut</span><kbd>⌘ X</kbd></div><div class="special-builder-menu-row is-muted"><span>Copy</span><kbd>⌘ C</kbd></div><div class="special-builder-menu-row is-paste"><span>↳ &nbsp;Paste</span><kbd>⌘ V</kbd></div>'
     const click = make('special-builder-click-pulse')
     click.style.setProperty('--special-color', person.actor.color)
@@ -246,25 +248,42 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
 
   const iconPoint = (tile: Tile): Point => ({ x: tile.iconBox.x + tile.iconBox.width / 2, y: tile.iconBox.y + tile.iconBox.height / 2 })
   const lockMenu = (tile: Tile) => {
-    tile.menuBox = constructionMenuPosition(tile.menu, scene, iconPoint(tile))
+    tile.menuBox = constructionMenuPosition(tile.menu, scene, iconPoint(tile), true, tile.box)
     place(tile.menu, tile.menuBox)
   }
+  const placeLockedMenu = (tile: Tile) => {
+    if (!tile.menuBox || (tile.menu.dataset.menuActive === 'true' && tile.menu.dataset.menuReserved !== 'true')) lockMenu(tile)
+    tile.menuBox = keepConstructionMenuInView(tile.menu, scene, tile.menuBox!)
+    place(tile.menu, tile.menuBox)
+  }
+  const menuState = (tile: Tile, active: boolean) => {
+    if (tile.menu.dataset.menuActive !== String(active)) {
+      tile.menu.dataset.menuActive = String(active)
+      tile.menu.classList.toggle('construction-menu-inactive', !active)
+    } else if (!active && tile.menu.dataset.menuReserved !== 'true') return
+    if (active) placeLockedMenu(tile)
+    // Retain the final Paste coordinates for the cursor's trip to the name.
+    // Releasing a closed menu must not relocate that outbound trip.
+    else releaseConstructionMenu(tile.menu)
+  }
   const menuEvent = (tile: Tile, action: 'open' | 'close') => {
-    if (action === 'close') releaseConstructionMenu(tile.menu)
+    menuState(tile, action === 'open')
     if (!disposed) document.dispatchEvent(new CustomEvent(`assembly:menu-${action}`, { detail: { menu: tile.menu, owner: tile.worker.cursor } }))
   }
 
   const span = Math.max(.8, end - start)
   const menuStep = tiles.length > 1 ? (span - .86) / (tiles.length - 1) : 0
+  const menuWindows: { tile: Tile; open: number; close: number }[] = []
   tiles.forEach((tile, index) => {
     const at = start + .46 + index * menuStep
+    menuWindows.push({ tile, open: at, close: at + .205 })
     const begin = at - .46
     const person = tile.worker
     const origin = () => pointOn(tile.outline, 0)
     const afterOutline = () => pointOn(tile.outline, 1)
     const nameStart = (): Point => ({ x: tile.nameBox.x, y: tile.nameBox.y + tile.nameBox.height * .65 })
     const nameEnd = (): Point => ({ x: tile.nameBox.x + tile.nameBox.width, y: tile.nameBox.y + tile.nameBox.height * .65 })
-    const pastePoint = (): Point => { if (!tile.menuBox) lockMenu(tile); return { x: tile.menuBox!.x + 63, y: tile.menuBox!.y + 82 } }
+    const pastePoint = (): Point => { placeLockedMenu(tile); return { x: tile.menuBox!.x + 63, y: tile.menuBox!.y + 82 } }
     gsap.set(tile.node, { backgroundColor: 'rgba(0,0,0,0)', borderColor: 'rgba(0,0,0,0)' })
     gsap.set([tile.icon, tile.name, ...(tile.dot ? [tile.dot] : [])], { opacity: 0 })
     gsap.set([tile.ghost, tile.menu, tile.pulse], { autoAlpha: 0 })
@@ -276,7 +295,7 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     pulse(tile, () => iconPoint(tile), begin + .43)
     timeline.fromTo(tile.menu, { autoAlpha: 0 }, {
       autoAlpha: 1, duration: .025, immediateRender: false,
-      onStart: () => { lockMenu(tile); menuEvent(tile, 'open') },
+      onStart: () => menuEvent(tile, 'open'),
       onReverseComplete: () => menuEvent(tile, 'close'),
     }, at)
     travel(person, () => iconPoint(tile), pastePoint, at + .025, .085, `Paste ${tile.text} icon`)
@@ -437,9 +456,15 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     })
   }
 
+  const menuClock = { value: 0 }
+  timeline.to(menuClock, { value: 1, duration: timeline.duration(), ease: 'none', onUpdate: () => {
+    const time = timeline.time()
+    menuWindows.forEach(({ tile, open, close }) => menuState(tile, time >= open && time < close))
+  } }, 0)
+
   return () => {
     disposed = true
-    tiles.forEach(tile => cancelMotionRead(tile))
+    tiles.forEach(tile => { cancelMotionRead(tile); releaseConstructionMenu(tile.menu) })
     ScrollTrigger.removeEventListener('refreshInit', measure)
     document.fonts?.removeEventListener('loadingdone', measure)
     layer.remove()

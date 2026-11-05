@@ -1,4 +1,9 @@
 /* Decorative design controls are only operated by the scroll choreography. */
+.construction-menu-inactive {
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
 .design-tool-panel,
 .design-tool-panel *,
 .assembly-cursor,

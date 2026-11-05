@@ -2,7 +2,7 @@ import { useLayoutEffect, type RefObject } from 'react'
 import gsap from 'gsap'
 import { collaborators, createCursor } from './design-tools'
 import { addElementConstruction } from './element-construction'
-import { getMotionRect, retainMotionFrame } from './motion-frame'
+import { getCreationSourcePoint, getMotionRect, retainMotionFrame } from './motion-frame'
 import { cancelMotionRead, queueMotionRead } from './motion-read'
 
 /** Even the page furniture is unpacked from the same physical source. */
@@ -35,32 +35,26 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
         const at = .03 + index * .025
         const moveX = gsap.quickSetter(cursor, 'x', 'px')
         const moveY = gsap.quickSetter(cursor, 'y', 'px')
-        const point = { x: 0, y: 0 }
         const readKey = {}
         readKeys.push(readKey)
-        const sourcePoint = () => {
-          const box = getMotionRect(source)
+        const sourcePoint = () => getCreationSourcePoint(page)
+        const targetPoint = () => {
+          const rect = getMotionRect(item, true)
           const scene = getMotionRect(page)
-          return { x: box.left + box.width / 2 - scene.left, y: box.top + box.height * .4 - scene.top }
+          return { x: rect.right - scene.left - page.clientLeft + page.scrollLeft + 4, y: rect.top - scene.top - page.clientTop + page.scrollTop + 3 }
         }
         const track = () => {
           queueMotionRead(readKey, () => {
             if (disposed) return
-            const rect = getMotionRect(item, true)
-            const scene = getMotionRect(page)
-            const x = rect.right - scene.left + 4
-            const y = rect.top - scene.top + 3
+            const position = targetPoint()
             return () => {
               if (disposed) return
-              point.x = x
-              point.y = y
-              moveX(x)
-              moveY(y)
+              moveX(position.x)
+              moveY(position.y)
             }
           })
         }
-        const birth = sourcePoint()
-        activeTimeline.fromTo(cursor, { autoAlpha: 0, scale: .18, x: birth.x, y: birth.y }, { autoAlpha: 1, scale: 1, duration: .16, ease: 'sine.out' }, Math.max(0, at - .08))
+        activeTimeline.fromTo(cursor, { autoAlpha: 0, scale: .18, x: () => sourcePoint().x, y: () => sourcePoint().y }, { autoAlpha: 1, scale: 1, duration: .16, ease: 'sine.out' }, Math.max(0, at - .08))
         activeTimeline.from(item, {
           x: `+=${origin.left + origin.width / 2 - target.left - target.width / 2}`,
           y: `+=${origin.top + origin.height / 2 - target.top - target.height / 2}`,
@@ -72,25 +66,24 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
           onUpdate: track,
         }, at)
         const returnFlight = { progress: 0 }
-        let departure = { ...point }
+        let departure: { x: number; y: number } | undefined
         activeTimeline.to(returnFlight, {
           progress: 1,
           duration: .62,
           ease: 'sine.inOut',
           onStart: () => {
             cancelMotionRead(readKey)
-            const rect = getMotionRect(item, true)
-            const scene = getMotionRect(page)
-            departure = { x: rect.right - scene.left + 4, y: rect.top - scene.top + 3 }
+            departure = targetPoint()
             const action = cursor.querySelector('.assembly-cursor-action')
             if (action) action.textContent = 'Back to the box'
           },
           onUpdate: () => {
             const destination = sourcePoint()
+            const from = departure ??= targetPoint()
             const t = returnFlight.progress
-            const bend = Math.sin(Math.PI * t) * Math.min(80, Math.abs(destination.y - departure.y) * .14 + 24)
-            moveX(departure.x + (destination.x - departure.x) * t + bend)
-            moveY(departure.y + (destination.y - departure.y) * t - bend * .4)
+            const bend = Math.sin(Math.PI * t) * Math.min(80, Math.abs(destination.y - from.y) * .14 + 24)
+            moveX(from.x + (destination.x - from.x) * t + bend)
+            moveY(from.y + (destination.y - from.y) * t - bend * .4)
           },
         }, at + 1.25)
         activeTimeline.to(cursor, { scale: .16, autoAlpha: 0, duration: .12, ease: 'power2.in' }, at + 1.78)
