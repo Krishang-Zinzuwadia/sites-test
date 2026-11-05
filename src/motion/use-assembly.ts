@@ -630,7 +630,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   depart(ava, () => optionPosition('color', colorChoice), 5.25);
   depart(zoe, () => point(component, 0, 0), 5.8);
 
-  // Eli finishes with visible alignment axes, a measured gap, and a small snap.
+  // Eli checks alignment with the guides and corner handles; finished content stays still.
   approach(eli, () => point(alignTarget, 0, 0.5), alignStart - 0.24);
   approach(remy, () => point(alignTarget, 1, 0.5), alignStart - 0.24, true);
   inspect('spacing', eli, () => point(alignTarget, 0, 0.5), alignStart, 5.99, [{ choice: 'left', at: 5.53 }, { choice: 'gap16', at: 5.76 }], 0);
@@ -640,7 +640,6 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   approach(eli, () => point(alignTarget, 0, 0), 6.55);
   approach(remy, () => point(alignTarget, 1, 1), 6.55, true);
   const snapAt = 6.9, snap = mobile ? 5 : 10;
-  timeline.fromTo([alignTarget.target, alignTarget.shell], { x: snap }, { x: 0, duration: 0.35, ease: 'power2.out', immediateRender: false }, snapAt);
   [eli, remy].forEach((cursor, index) => {
     const control = cursorControl(cursor);
     const alignment = { offset: snap };
