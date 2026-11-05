@@ -408,15 +408,28 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     }
   }
   measure()
+  const cursorSnapshot = new Map<Worker, Point>()
+  const captureCursors = () => {
+    if (disposed) return
+    cursorSnapshot.clear()
+    workers.forEach(worker => {
+      const x = Number(gsap.getProperty(worker.cursor, 'x')), y = Number(gsap.getProperty(worker.cursor, 'y'))
+      if (Number.isFinite(x) && Number.isFinite(y)) cursorSnapshot.set(worker, { x, y })
+    })
+  }
   const restoreCursors = () => {
     if (disposed) return
     jobs.forEach(job => cancelMotionRead(job))
-    workers.forEach(worker => {
+    cursorSnapshot.forEach((point, worker) => {
       ++worker.revision
-      if (Number.isFinite(worker.x)) worker.setX(worker.x)
-      if (Number.isFinite(worker.y)) worker.setY(worker.y)
+      worker.x = point.x
+      worker.y = point.y
+      worker.setX(point.x)
+      worker.setY(point.y)
     })
+    cursorSnapshot.clear()
   }
+  ScrollTrigger.addEventListener('refreshInit', captureCursors)
   ScrollTrigger.addEventListener('refreshInit', measure)
   ScrollTrigger.addEventListener('refresh', restoreCursors)
   document.fonts?.addEventListener('loadingdone', measure)
@@ -541,6 +554,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     disposed = true
     jobs.forEach(job => { cancelMotionRead(job); if (job.menu) releaseConstructionMenu(job.menu) })
     specialCleanup()
+    ScrollTrigger.removeEventListener('refreshInit', captureCursors)
     ScrollTrigger.removeEventListener('refreshInit', measure)
     ScrollTrigger.removeEventListener('refresh', restoreCursors)
     document.fonts?.removeEventListener('loadingdone', measure)
