@@ -37,6 +37,7 @@ type ScenePlan = {
   onTimedProgress?: () => void;
   constructionCleanup?: () => void;
   invalidateCaret?: () => void;
+  captureCursorControls?: () => void;
   syncCursorControls?: () => void;
 };
 
@@ -128,6 +129,7 @@ function positionBox(node: HTMLElement, box: Box) {
   Object.assign(node.style, { left: `${box.x}px`, top: `${box.y}px`, width: `${box.width}px`, height: `${box.height}px` });
 }
 function measureScene(plan: ScenePlan) {
+  plan.captureCursorControls?.();
   invalidateMotionFrame();
   plan.sourceOrigins.clear();
   // Temporarily remove only the transforms we own; restore the identical values
@@ -261,12 +263,23 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     }
     return control;
   };
-  plan.syncCursorControls = () => cursorControls.forEach(control => {
-    // Refresh can restore a birth startAt while suppressing the flight writer.
-    // Our last rendered work position remains authoritative, even while paused.
-    control.setX(control.x);
-    control.setY(control.y);
-  });
+  const cursorSnapshot = new Map<CursorControl, Point>();
+  plan.captureCursorControls = () => {
+    cursorSnapshot.clear();
+    cursorControls.forEach((control, cursor) => {
+      const x = Number(gsap.getProperty(cursor, 'x')), y = Number(gsap.getProperty(cursor, 'y'));
+      if (Number.isFinite(x) && Number.isFinite(y)) cursorSnapshot.set(control, { x, y });
+    });
+  };
+  plan.syncCursorControls = () => {
+    // Revert can mutate both the transform and the flight's live cache.
+    // Restore the pose frozen before refresh began, even while paused.
+    cursorSnapshot.forEach((point, control) => {
+      control.setX(point.x);
+      control.setY(point.y);
+    });
+    cursorSnapshot.clear();
+  };
   const writeCursorLabels = (cursor: HTMLElement, control: CursorControl, left: number, top: number, width: number, height: number) => {
     const edge = left + control.x > width - 145 ? 'right' : 'left';
     const vertical = top + control.y > height - 78 ? 'above' : 'below';

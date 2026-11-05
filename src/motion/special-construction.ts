@@ -246,15 +246,28 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     }
   }
   measure()
+  const cursorSnapshot = new Map<Worker, Point>()
+  const captureCursors = () => {
+    if (disposed) return
+    cursorSnapshot.clear()
+    workers.forEach(person => {
+      const x = Number(gsap.getProperty(person.cursor, 'x')), y = Number(gsap.getProperty(person.cursor, 'y'))
+      if (Number.isFinite(x) && Number.isFinite(y)) cursorSnapshot.set(person, { x, y })
+    })
+  }
   const restoreCursors = () => {
     if (disposed) return
     tiles.forEach(tile => cancelMotionRead(tile))
-    workers.forEach(person => {
+    cursorSnapshot.forEach((point, person) => {
       ++person.revision
-      if (Number.isFinite(person.x)) person.setX(person.x)
-      if (Number.isFinite(person.y)) person.setY(person.y)
+      person.x = point.x
+      person.y = point.y
+      person.setX(point.x)
+      person.setY(point.y)
     })
+    cursorSnapshot.clear()
   }
+  ScrollTrigger.addEventListener('refreshInit', captureCursors)
   ScrollTrigger.addEventListener('refreshInit', measure)
   ScrollTrigger.addEventListener('refresh', restoreCursors)
   document.fonts?.addEventListener('loadingdone', measure)
@@ -478,6 +491,7 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
   return () => {
     disposed = true
     tiles.forEach(tile => { cancelMotionRead(tile); releaseConstructionMenu(tile.menu) })
+    ScrollTrigger.removeEventListener('refreshInit', captureCursors)
     ScrollTrigger.removeEventListener('refreshInit', measure)
     ScrollTrigger.removeEventListener('refresh', restoreCursors)
     document.fonts?.removeEventListener('loadingdone', measure)
