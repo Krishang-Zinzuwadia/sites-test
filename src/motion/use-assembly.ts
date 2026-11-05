@@ -5,6 +5,7 @@ import { collaborators, createCursor, createToolPanel } from './design-tools';
 import { addElementConstruction } from './element-construction';
 import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement';
 import { getCreationSourcePoint, getMotionRect, getMotionScrollLimit, getMotionViewport, invalidateMotionFrame, retainMotionFrame } from './motion-frame';
+import { cancelMotionRead, queueMotionRead } from './motion-read';
 import './assembly.css';
 
 type AssemblyKind = 'text' | 'card' | 'art' | 'line';
@@ -12,7 +13,7 @@ type Box = { x: number; y: number; width: number; height: number };
 type Point = { x: number; y: number };
 type Motion = { x: number; y: number; rotation: number; scale: number; opacity: number };
 type CursorControl = {
-  x: number; y: number; edge: string; vertical: string;
+  x: number; y: number; revision: number; edge: string; vertical: string;
   setX: (value: number) => void; setY: (value: number) => void;
   setScale: (value: number) => void;
 };
@@ -195,9 +196,9 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     if (!control) {
       const writeX = gsap.quickSetter(cursor, 'x', 'px'), writeY = gsap.quickSetter(cursor, 'y', 'px'), writeScale = gsap.quickSetter(cursor, 'scale');
       const state: CursorControl = {
-        x: 0, y: 0, edge: '', vertical: '',
-        setX: (value: number) => { state.x = value; writeX(value); },
-        setY: (value: number) => { state.y = value; writeY(value); },
+        x: 0, y: 0, revision: 0, edge: '', vertical: '',
+        setX: (value: number) => { state.x = value; state.revision++; writeX(value); },
+        setY: (value: number) => { state.y = value; state.revision++; writeY(value); },
         setScale: (value: number) => writeScale(value),
       };
       control = state;
@@ -210,7 +211,14 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     // Resync once there, rather than asking GSAP for every cursor every frame.
     control.x = Number(gsap.getProperty(cursor, 'x'));
     control.y = Number(gsap.getProperty(cursor, 'y'));
+    control.revision++;
   });
+  const writeCursorLabels = (cursor: HTMLElement, control: CursorControl, left: number, top: number, width: number, height: number) => {
+    const edge = left + control.x > width - 145 ? 'right' : 'left';
+    const vertical = top + control.y > height - 78 ? 'above' : 'below';
+    if (edge !== control.edge) { control.edge = edge; cursor.dataset.edge = edge; }
+    if (vertical !== control.vertical) { control.vertical = vertical; cursor.dataset.vertical = vertical; }
+  };
   const panelEntries = Object.entries(plan.panels) as [ToolKind, HTMLDivElement][];
   const panelRects = new Map<HTMLElement, DOMRect>();
   const options = new Map<string, HTMLElement>();
@@ -236,6 +244,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     let origin: Point | undefined;
     const control = cursorControl(cursor), setX = control.setX, setY = control.setY, setScale = control.setScale;
     timeline.call(() => {
+      if (cursor === leo) cancelMotionRead(plan.caret);
       if (mode === 'birth') {
         origin = sourcePoint(plan, start, true);
         setX(origin.x); setY(origin.y);
@@ -412,7 +421,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   let typedCount = -1;
   let caretSceneWidth = 0;
   let caretPoint: Point | undefined;
-  const invalidateCaret = () => { caretPoint = undefined; invalidateMotionFrame(plan.caret); };
+  const invalidateCaret = () => { cancelMotionRead(plan.caret); caretPoint = undefined; invalidateMotionFrame(plan.caret); };
   plan.invalidateCaret = invalidateCaret;
   approach(leo, () => ({ x: plan.copyBox.x + 3, y: plan.copyBox.y + 8 }), copyStart - 0.26);
   approach(sam, () => ({ x: plan.copyBox.x + plan.copyBox.width, y: plan.copyBox.y + plan.copyBox.height }), copyStart - 0.26, true);
@@ -434,13 +443,26 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
       caretPoint = undefined;
     }
     if (!caretPoint) {
-      // Real glyph wrapping remains the authority. Read only after a changed
-      // character/font/layout, then retain its scene-local position while scrolling.
-      const caret = getMotionRect(plan.caret, true), scene = getMotionRect(plan.scene);
-      caretPoint = { x: Math.min(sceneWidth - 56, caret.left - scene.left + 7), y: caret.top - scene.top + 10 };
+      const revision = copyControl.revision;
+      queueMotionRead(plan.caret, () => {
+        if (copyControl.revision !== revision || typedCount !== count) return;
+        // Read all changed ghosts together at the same ticker tail, before any
+        // queued caret cursor writes. Glyph wrapping remains the authority.
+        const caret = getMotionRect(plan.caret, true), scene = getMotionRect(plan.scene), view = getMotionViewport();
+        const position = { x: Math.min(sceneWidth - 56, caret.left - scene.left + 7), y: caret.top - scene.top + 10 };
+        return () => {
+          if (copyControl.revision !== revision || typedCount !== count) return;
+          caretPoint = position;
+          setCopyX(position.x); setCopyY(position.y);
+          writeCursorLabels(leo, copyControl, scene.left, scene.top, view.width, view.height);
+        };
+      });
+    } else {
+      cancelMotionRead(plan.caret);
+      setCopyX(caretPoint.x); setCopyY(caretPoint.y);
     }
-    setCopyX(caretPoint.x); setCopyY(caretPoint.y);
   } }, copyStart);
+  timeline.call(() => cancelMotionRead(plan.caret), [], copyEnd + 0.12);
   timeline.to(plan.ghost, { autoAlpha: 0, duration: 0.18 }, copyEnd + 0.12);
   move(sam, () => ({ x: plan.copyBox.x + 8, y: plan.copyBox.y + plan.copyBox.height }), copyStart + 0.1, copyEnd - copyStart - 0.1);
   timeline.fromTo(plan.proof, { autoAlpha: 0, y: 4 }, { autoAlpha: 1, y: 0, duration: 0.15 }, copyEnd);
@@ -572,10 +594,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
       if (node.dataset.open === 'true') panelRects.set(node, getMotionRect(node));
     });
     cursorControls.forEach((control, cursor) => {
-      const edge = host.left + control.x > view.width - 145 ? 'right' : 'left';
-      const vertical = host.top + control.y > view.height - 78 ? 'above' : 'below';
-      if (edge !== control.edge) { control.edge = edge; cursor.dataset.edge = edge; }
-      if (vertical !== control.vertical) { control.vertical = vertical; cursor.dataset.vertical = vertical; }
+      writeCursorLabels(cursor, control, host.left, host.top, view.width, view.height);
     });
     // Keep an opened inspector locked to its work point, correcting only when
     // the moving camera would otherwise carry it outside the viewport.
@@ -591,6 +610,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   });
   if (plan.intro) {
     timeline.eventCallback('onComplete', () => {
+      cancelMotionRead(plan.caret);
       plan.introComplete = true; makeReadable(plan.targets.map(({ target }) => target));
       gsap.set(plan.overlay, { autoAlpha: 0 });
       plan.onIntroComplete?.();
@@ -625,66 +645,179 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
           makeReadable(allTargets);
           return;
         }
+        type Size = { width: number; height: number };
+        type SceneRecord = {
+          scene: HTMLElement; targets: HTMLElement[]; plan?: ScenePlan;
+          building: boolean; observer?: ResizeObserver; sizes: Map<HTMLElement, Size>;
+        };
         const mobile = Boolean(mediaContext.conditions?.mobile);
-        const scenes = Array.from(element.querySelectorAll<HTMLElement>('.assembly-scene'));
         const plans: ScenePlan[] = [];
-        scenes.forEach((scene) => {
-          // Nested animation targets would compound transforms; the outer target owns them.
-          const targets = Array.from(scene.querySelectorAll<HTMLElement>('[data-assemble]')).filter((target) =>
-            target.closest('.assembly-scene') === scene && !target.parentElement?.closest('[data-assemble]'),
-          );
-          if (!targets.length) return;
-          const plan = createScene(scene, targets, mobile);
-          const savedIntroProgress = introProgress;
-          plan.onIntroProgress = progress => { introProgress = progress; };
-          plan.onIntroComplete = () => { introFinished = true; };
-          measureScene(plan);
-          animateScene(plan, mobile);
-          if (plan.intro && introFinished) {
-            plan.timeline?.pause().progress(1, true);
-            plan.introComplete = true;
-            makeReadable([...plan.targets.map(({ target }) => target), plan.copyLeaf]);
-            gsap.set(plan.overlay, { autoAlpha: 0 });
-          } else if (plan.intro) {
-            if (savedIntroProgress > 0) plan.timeline?.delay(0).progress(savedIntroProgress, false);
-            if (playbackPaused) plan.timeline?.pause();
-          }
-          plans.push(plan);
+        const records = Array.from(element.querySelectorAll<HTMLElement>('.assembly-scene')).map(scene => ({
+          scene, targets: [] as HTMLElement[], building: false, sizes: new Map<HTMLElement, Size>(),
+        } as SceneRecord));
+        const byScene = new Map(records.map(record => [record.scene, record]));
+        allTargets.forEach(target => {
+          const scene = target.closest<HTMLElement>('.assembly-scene');
+          if (scene && !target.parentElement?.closest('[data-assemble]')) byScene.get(scene)?.targets.push(target);
         });
+        const pending = new Set(records.filter(record => record.targets.length));
+        const priority = new Set<SceneRecord>();
+        const initialScroll = scrollY;
+        let hasObservedMovement = false;
+        let active = true;
+        let focusedPlan: ScenePlan | undefined;
+        let warmRecord: SceneRecord | undefined;
+        let idleHandle: number | undefined;
+        let idleTimer: number | undefined;
+        let idleFrame: number | undefined;
+        let nearFrame: number | undefined;
+        let firstPaint: number | undefined;
+        let secondPaint: number | undefined;
+        let idleBudgetStarted = 0;
+        let pendingRefresh: gsap.core.Tween | undefined;
+        const sizeOf = (node: HTMLElement): Size => ({ width: node.offsetWidth, height: node.offsetHeight });
+        const sameSize = (a: Size | undefined, b: Size) => Boolean(a && a.width === b.width && a.height === b.height);
+        const captureSizes = (record: SceneRecord) => {
+          record.sizes.set(record.scene, sizeOf(record.scene));
+          record.targets.forEach(target => record.sizes.set(target, sizeOf(target)));
+        };
+        // Pending content keeps its real layout and keyboard semantics. Only its
+        // owned root paint is hidden, so nested scenes can be prepared separately.
+        gsap.set(Array.from(pending).flatMap(record => record.targets), { opacity: 0 });
+        pending.forEach(record => { record.scene.dataset.assemblyPending = 'true'; });
 
-        const measure = () => plans.forEach((plan) => {
-          if (!plan.introComplete) measureScene(plan);
-          // Only scrubbed timelines invalidate on refresh. Reinitializing a live
-          // intro can rewind its overlapping reveal/exit tweens after fonts load.
-        });
+        const requestRefresh = mediaContext.add('refreshAssemblyGeometry', () => {
+          if (!active || disposed) return;
+          pendingRefresh?.kill();
+          pendingRefresh = gsap.delayedCall(0.12, () => {
+            pendingRefresh = undefined;
+            if (active && !disposed) ScrollTrigger.refresh();
+          });
+        }) as () => void;
+        const nextIdleRecord = () => {
+          if (warmRecord && pending.has(warmRecord)) return warmRecord;
+          if (!introFinished) return undefined;
+          for (const record of priority) if (pending.has(record)) return record;
+          return pending.values().next().value as SceneRecord | undefined;
+        };
+        const runIdleBuild = (deadline?: IdleDeadline) => {
+          idleHandle = undefined;
+          idleTimer = undefined;
+          idleFrame = undefined;
+          if (!active || disposed) return;
+          const record = nextIdleRecord();
+          if (!record) return;
+          // Never turn a single idle callback into an all-scenes construction batch.
+          if (deadline && !deadline.didTimeout && deadline.timeRemaining() < 8 && performance.now() - idleBudgetStarted < 900) {
+            queueIdleBuild();
+            return;
+          }
+          buildRecord(record);
+          if (record === warmRecord) warmRecord = undefined;
+          idleBudgetStarted = 0;
+          queueIdleBuild();
+        };
+        function queueIdleBuild() {
+          if (!active || disposed || !nextIdleRecord() || idleHandle !== undefined || idleTimer !== undefined || idleFrame !== undefined) return;
+          if (!idleBudgetStarted) idleBudgetStarted = performance.now();
+          if (typeof window.requestIdleCallback === 'function') idleHandle = window.requestIdleCallback(runIdleBuild, { timeout: 750 });
+          else idleTimer = window.setTimeout(() => {
+            idleTimer = undefined;
+            idleFrame = requestAnimationFrame(() => runIdleBuild());
+          }, introFinished ? 32 : 120);
+        }
+
+        // Idle, intersection, and focus callbacks execute after this media callback
+        // returns. The wrapper keeps every later GSAP object in the same context.
+        const buildRecord = mediaContext.add('buildAssemblyScene', (record: SceneRecord): ScenePlan | undefined => {
+          if (!active || disposed || record.building) return record.plan;
+          if (record.plan) return record.plan;
+          record.building = true;
+          try {
+            const plan = createScene(record.scene, record.targets, mobile);
+            record.plan = plan;
+            const savedIntroProgress = introProgress;
+            plan.onIntroProgress = progress => { introProgress = progress; };
+            plan.onIntroComplete = () => {
+              introFinished = true;
+              queueIdleBuild();
+            };
+            measureScene(plan);
+            animateScene(plan, mobile);
+            plans.push(plan);
+            pending.delete(record);
+            priority.delete(record);
+            delete record.scene.dataset.assemblyPending;
+            if (plan.intro && introFinished) {
+              plan.timeline?.pause().progress(1, true);
+              plan.introComplete = true;
+              makeReadable([...plan.targets.map(({ target }) => target), plan.copyLeaf]);
+              gsap.set(plan.overlay, { autoAlpha: 0 });
+            } else if (plan.intro) {
+              if (savedIntroProgress > 0) plan.timeline?.delay(0).progress(savedIntroProgress, false);
+              if (playbackPaused) plan.timeline?.pause();
+            } else {
+              // No layout was inserted: only this new trigger needs its first read.
+              // Updating now also handles a manual jump past its end before idle ran.
+              plan.trigger?.refresh();
+              plan.trigger?.update();
+            }
+            captureSizes(record);
+            if (typeof ResizeObserver !== 'undefined') {
+              record.observer = new ResizeObserver(entries => {
+                if (!active) return;
+                let changed = false;
+                entries.forEach(({ target }) => {
+                  const node = target as HTMLElement, size = sizeOf(node);
+                  if (!sameSize(record.sizes.get(node), size)) changed = true;
+                  record.sizes.set(node, size);
+                });
+                // Initial observer deliveries match the captured size and do not
+                // cause another global refresh while the opening is playing.
+                if (changed) requestRefresh();
+              });
+              record.observer.observe(record.scene);
+              record.targets.forEach(target => record.observer!.observe(target));
+            }
+            return plan;
+          } finally {
+            record.building = false;
+          }
+        }) as (record: SceneRecord) => ScenePlan | undefined;
+
+        const measure = () => {
+          plans.forEach(plan => { if (!plan.introComplete) measureScene(plan); });
+          records.forEach(record => { if (record.plan) captureSizes(record); });
+        };
         const pauseIntro = () => { playbackPaused = true; plans.forEach(plan => { if (plan.intro && !plan.introComplete) plan.timeline?.pause(); }); };
         const resumeIntro = () => { playbackPaused = false; plans.forEach(plan => { if (plan.intro && !plan.introComplete) plan.timeline?.resume(); }); };
         document.addEventListener('assembly:playback-pause', pauseIntro);
         document.addEventListener('assembly:playback-resume', resumeIntro);
         ScrollTrigger.addEventListener('refreshInit', measure);
-        let focusedPlan: ScenePlan | undefined;
-        const releaseFocusedScene = () => {
+        const releaseFocusedScene = mediaContext.add('releaseAssemblyFocus', () => {
           const plan = focusedPlan;
           focusedPlan = undefined;
           if (!plan || plan.intro) return;
           gsap.set(plan.overlay, { autoAlpha: 1 });
           plan.trigger?.enable(false, false);
           plan.trigger?.refresh();
-        };
-        const revealFocusedTarget = (target: EventTarget | null, force = false) => {
+        }) as () => void;
+        const revealFocusedTarget = mediaContext.add('revealAssemblyFocus', (target: EventTarget | null, force = false) => {
           if (!(target instanceof Element)) return;
-          const plan = plans.find(({ scene }) => scene === target.closest('.assembly-scene'));
+          const scene = target.closest<HTMLElement>('.assembly-scene');
+          const record = scene ? byScene.get(scene) : undefined;
+          const plan = record?.targets.length ? buildRecord(record) : undefined;
           if (!plan || (focusedPlan === plan && !force)) return;
           if (focusedPlan !== plan) releaseFocusedScene();
           focusedPlan = plan;
-          // Keyboard focus can scroll straight to a clipped control. Keep its
-          // scene readable for the entire focus visit, then restore normal scrub.
           plan.trigger?.disable(false, false);
           plan.timeline?.pause().progress(1, false);
           makeReadable([...plan.targets.map(({ target: node }) => node), plan.copyLeaf]);
           gsap.set(plan.overlay, { autoAlpha: 0 });
-        };
+        }) as (target: EventTarget | null, force?: boolean) => void;
         const restoreFocusedScene = () => {
+          pendingRefresh?.kill();
+          pendingRefresh = undefined;
           plans.forEach(plan => plan.syncCursorControls?.());
           revealFocusedTarget(document.activeElement, true);
         };
@@ -696,44 +829,90 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
         element.addEventListener('focusin', onFocusIn);
         element.addEventListener('focusout', onFocusOut);
         ScrollTrigger.addEventListener('refresh', restoreFocusedScene);
-        // A breakpoint rebuild preserves DOM focus without firing focusin again.
-        revealFocusedTarget(document.activeElement);
-        let pendingRefresh: gsap.core.Tween | undefined;
-        let active = true;
-        const requestRefresh = () => {
-          if (!active || disposed) return;
-          pendingRefresh?.kill();
-          pendingRefresh = gsap.delayedCall(0.12, () => ScrollTrigger.refresh());
+
+        const scanNearby = () => {
+          nearFrame = undefined;
+          if (!active || disposed || !pending.size) return;
+          const view = getMotionViewport();
+          hasObservedMovement ||= Math.abs(view.scrollY - initialScroll) > 1;
+          for (const record of Array.from(pending)) {
+            const rect = getMotionRect(record.scene);
+            if (rect.bottom > -view.height && rect.top < view.height * 2.5) priority.add(record);
+            // Actual user/camera movement cannot leave a newly visible scene blank.
+            // Off-screen skipped scenes remain pending and build before reversal.
+            if (hasObservedMovement && rect.bottom > 0 && rect.top < view.height) buildRecord(record);
+          }
+          queueIdleBuild();
         };
-        const resizeObserver = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(requestRefresh);
-        plans.forEach(({ scene, targets }) => {
-          resizeObserver?.observe(scene);
-          targets.forEach(({ target }) => resizeObserver?.observe(target));
+        const scheduleNearScan = () => {
+          hasObservedMovement ||= Math.abs(scrollY - initialScroll) > 1;
+          if (!active || nearFrame !== undefined) return;
+          nearFrame = requestAnimationFrame(scanNearby);
+        };
+        window.addEventListener('scroll', scheduleNearScan, { passive: true });
+        const intersectionObserver = typeof IntersectionObserver === 'undefined' ? undefined : new IntersectionObserver(entries => {
+          entries.forEach(entry => {
+            const record = byScene.get(entry.target as HTMLElement);
+            if (record && entry.isIntersecting && pending.has(record)) priority.add(record);
+          });
+          queueIdleBuild();
+        }, { rootMargin: '120% 0px 180% 0px' });
+        pending.forEach(record => intersectionObserver?.observe(record.scene));
+
+        const introRecord = records.find(record => record.targets.length && record.scene.hasAttribute('data-intro'));
+        if (introRecord) buildRecord(introRecord);
+        else introFinished = true;
+        // Retained focus survives a media rebuild without another focusin event.
+        revealFocusedTarget(document.activeElement);
+        firstPaint = requestAnimationFrame(() => {
+          firstPaint = undefined;
+          secondPaint = requestAnimationFrame(() => {
+            secondPaint = undefined;
+            if (!active) return;
+            const view = getMotionViewport();
+            warmRecord = Array.from(pending).find(record => {
+              const rect = getMotionRect(record.scene);
+              return rect.bottom > 0 && rect.top < view.height + 64;
+            });
+            queueIdleBuild();
+            if (Math.abs(view.scrollY - initialScroll) > 1) scheduleNearScan();
+          });
         });
-        const refreshFrame = requestAnimationFrame(() => {
-          if (!active) return;
-          ScrollTrigger.refresh();
-          restoreFocusedScene();
+        document.fonts?.ready.then(() => {
+          if (!active || disposed) return;
+          let changed = false;
+          records.forEach(record => {
+            if (!record.plan) return;
+            record.plan.invalidateCaret?.();
+            for (const node of [record.scene, ...record.targets]) {
+              const size = sizeOf(node);
+              if (!sameSize(record.sizes.get(node), size)) changed = true;
+              record.sizes.set(node, size);
+            }
+          });
+          if (changed) requestRefresh();
         });
-        document.fonts?.ready.then(requestRefresh);
+        queueIdleBuild();
 
         return () => {
           active = false;
-          cancelAnimationFrame(refreshFrame);
+          if (idleHandle !== undefined) window.cancelIdleCallback(idleHandle);
+          if (idleTimer !== undefined) clearTimeout(idleTimer);
+          for (const frame of [idleFrame, nearFrame, firstPaint, secondPaint]) if (frame !== undefined) cancelAnimationFrame(frame);
           pendingRefresh?.kill();
-          resizeObserver?.disconnect();
+          intersectionObserver?.disconnect();
+          records.forEach(record => {
+            record.observer?.disconnect();
+            delete record.scene.dataset.assemblyPending;
+          });
           ScrollTrigger.removeEventListener('refreshInit', measure);
           ScrollTrigger.removeEventListener('refresh', restoreFocusedScene);
           document.removeEventListener('assembly:playback-pause', pauseIntro);
           document.removeEventListener('assembly:playback-resume', resumeIntro);
           element.removeEventListener('focusin', onFocusIn);
           element.removeEventListener('focusout', onFocusOut);
-          // GSAP reverts/kills this media context's animations and triggers. The
-          // injected DOM is ours to remove, including during React StrictMode.
-          plans.forEach(({ constructionCleanup, overlay }) => {
-            constructionCleanup?.();
-            overlay.remove();
-          });
+          window.removeEventListener('scroll', scheduleNearScan);
+          plans.forEach(({ constructionCleanup, overlay, caret }) => { cancelMotionRead(caret); constructionCleanup?.(); overlay.remove(); });
           invalidateMotionFrame();
         };
       });
@@ -749,4 +928,3 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
     };
   }, [root, enabled, replayKey]);
 }
-

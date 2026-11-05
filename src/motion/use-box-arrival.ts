@@ -3,6 +3,7 @@ import gsap from 'gsap'
 import { collaborators, createCursor } from './design-tools'
 import { addElementConstruction } from './element-construction'
 import { getMotionRect, retainMotionFrame } from './motion-frame'
+import { cancelMotionRead, queueMotionRead } from './motion-read'
 
 /** Even the page furniture is unpacked from the same physical source. */
 export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: boolean, replayKey: number) {
@@ -18,6 +19,8 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
     page.append(overlay)
     let cleanupLeaves: (() => void) | undefined
     let timeline: gsap.core.Timeline | undefined
+    let disposed = false
+    const readKeys: object[] = []
     const context = gsap.context(() => {
       timeline = gsap.timeline()
       const activeTimeline = timeline
@@ -33,18 +36,28 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
         const moveX = gsap.quickSetter(cursor, 'x', 'px')
         const moveY = gsap.quickSetter(cursor, 'y', 'px')
         const point = { x: 0, y: 0 }
+        const readKey = {}
+        readKeys.push(readKey)
         const sourcePoint = () => {
           const box = getMotionRect(source)
           const scene = getMotionRect(page)
           return { x: box.left + box.width / 2 - scene.left, y: box.top + box.height * .4 - scene.top }
         }
         const track = () => {
-          const rect = getMotionRect(item, true)
-          const scene = getMotionRect(page)
-          point.x = rect.right - scene.left + 4
-          point.y = rect.top - scene.top + 3
-          moveX(point.x)
-          moveY(point.y)
+          queueMotionRead(readKey, () => {
+            if (disposed) return
+            const rect = getMotionRect(item, true)
+            const scene = getMotionRect(page)
+            const x = rect.right - scene.left + 4
+            const y = rect.top - scene.top + 3
+            return () => {
+              if (disposed) return
+              point.x = x
+              point.y = y
+              moveX(x)
+              moveY(y)
+            }
+          })
         }
         const birth = sourcePoint()
         activeTimeline.fromTo(cursor, { autoAlpha: 0, scale: .18, x: birth.x, y: birth.y }, { autoAlpha: 1, scale: 1, duration: .16, ease: 'sine.out' }, Math.max(0, at - .08))
@@ -65,7 +78,10 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
           duration: .62,
           ease: 'sine.inOut',
           onStart: () => {
-            departure = { ...point }
+            cancelMotionRead(readKey)
+            const rect = getMotionRect(item, true)
+            const scene = getMotionRect(page)
+            departure = { x: rect.right - scene.left + 4, y: rect.top - scene.top + 3 }
             const action = cursor.querySelector('.assembly-cursor-action')
             if (action) action.textContent = 'Back to the box'
           },
@@ -87,6 +103,8 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
     document.addEventListener('assembly:playback-resume', resume)
     if (page.dataset.playback === 'paused') pause()
     return () => {
+      disposed = true
+      readKeys.forEach(cancelMotionRead)
       document.removeEventListener('assembly:playback-pause', pause)
       document.removeEventListener('assembly:playback-resume', resume)
       cleanupLeaves?.()

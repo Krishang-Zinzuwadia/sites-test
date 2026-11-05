@@ -44,6 +44,8 @@ Source files use lowercase kebab-case names. React component and hook exports re
 
 Every cursor, animation and construction step remains enabled. Motion shares scene/source geometry within each GSAP frame, reuses cursor setters, avoids unchanged text updates, and caches measured illustration paths. Natural-layout measurements and resize/font refreshes explicitly invalidate those caches. The scroll camera and percentage readout measure page bounds when layout changes rather than on every scroll frame.
 
+Startup constructs the intro first and prepares later scene timelines in bounded idle slices, with viewport and focus catch-up for manual navigation. Pending elements keep their natural layout while hidden. Actual layout changes trigger refreshes; initial observer delivery does not rebuild the whole animation system during the opening. Live caret and moving-item measurements share a one-shot GSAP ticker tail: all reads finish before cursor writes, within the same animation frame.
+
 Fonts load from the same origin without an external stylesheet dependency. React and GSAP have separate content-hashed vendor chunks so edits to portfolio code do not invalidate those downloads. Vite preloads required modules, and `public/_headers` gives hashed `/assets/*` files a one-year immutable browser cache. HTML keeps Cloudflare's revalidation behavior. `_headers` is Cloudflare's required configuration filename.
 
 The performance pass uses source review and production build checks. Browser traces, frame-rate figures, Lighthouse scores and Core Web Vitals were not collected; no automated tests were written or run.

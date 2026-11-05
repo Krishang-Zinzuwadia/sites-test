@@ -3,6 +3,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { collaborators, createCursor, type Collaborator } from './design-tools'
 import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement'
 import { getMotionRect, getCreationSourcePoint, invalidateMotionFrame } from './motion-frame'
+import { queueMotionRead, cancelMotionRead } from './motion-read'
 import './special-construction.css'
 
 type SpecialConstructionOptions = {
@@ -18,7 +19,7 @@ type Box = Point & { width: number; height: number }
 type Worker = {
   actor: Collaborator; cursor: HTMLDivElement; last?: () => Point; finish: number
   action: HTMLElement | null; setX: (value: number) => void; setY: (value: number) => void
-  x: number; y: number; label: string; edge: string; vertical: string
+  x: number; y: number; label: string; edge: string; vertical: string; revision: number
 }
 type Tile = {
   node: HTMLElement; icon: HTMLElement; name: HTMLElement; dot: HTMLElement | null
@@ -108,12 +109,13 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
       actor, cursor, finish: start, action: cursor.querySelector<HTMLElement>('.assembly-cursor-action'),
       setX: gsap.quickSetter(cursor, 'x', 'px') as (value: number) => void,
       setY: gsap.quickSetter(cursor, 'y', 'px') as (value: number) => void,
-      x: NaN, y: NaN, label: '', edge: '', vertical: '',
+      x: NaN, y: NaN, label: '', edge: '', vertical: '', revision: 0,
     }
   }
   const setCursor = (person: Worker, point: Point, action: string) => {
     if (disposed) return
     const host = getMotionRect(scene)
+    ++person.revision
     if (person.x !== point.x) { person.setX(point.x); person.x = point.x }
     if (person.y !== point.y) { person.setY(point.y); person.y = point.y }
     if (person.label !== action) { if (person.action) person.action.textContent = action; person.label = action }
@@ -144,8 +146,9 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
       travel(person, liveSource, to, at + .035, Math.max(.02, duration - .035), action)
     } else travel(person, person.last, to, at, duration, action)
   }
-  const returnHome = (person: Worker, flight = .54, shrink = .06) => {
+  const returnHome = (person: Worker, flight = .54, shrink = .06, readKey?: object) => {
     if (!person.last) return
+    if (readKey) timeline.call(() => cancelMotionRead(readKey), [], person.finish)
     travel(person, person.last, liveSource, person.finish, flight, 'Back to the source')
     timeline.to(person.cursor, { autoAlpha: 0, scale: .18, duration: shrink, immediateRender: false }, person.finish + flight)
   }
@@ -222,7 +225,8 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
         placeRect(tile.outline, tile.box, tile.radius)
         place(tile.ghost, tile.nameBox)
         typographyProperties.forEach((property, index) => tile.ghost.style.setProperty(property, typography[index]))
-        tile.menuBox = undefined
+        if (tile.menu.dataset.menuReserved !== 'true') tile.menuBox = undefined
+        cancelMotionRead(tile)
         tile.caretPositions.clear()
       })
       cellMeasurements.forEach(({ cell, box }) => {
@@ -238,6 +242,7 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
   }
   measure()
   ScrollTrigger.addEventListener('refreshInit', measure)
+  document.fonts?.addEventListener('loadingdone', measure)
 
   const iconPoint = (tile: Tile): Point => ({ x: tile.iconBox.x + tile.iconBox.width / 2, y: tile.iconBox.y + tile.iconBox.height / 2 })
   const lockMenu = (tile: Tile) => {
@@ -263,6 +268,7 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     gsap.set(tile.node, { backgroundColor: 'rgba(0,0,0,0)', borderColor: 'rgba(0,0,0,0)' })
     gsap.set([tile.icon, tile.name, ...(tile.dot ? [tile.dot] : [])], { opacity: 0 })
     gsap.set([tile.ghost, tile.menu, tile.pulse], { autoAlpha: 0 })
+    timeline.call(() => cancelMotionRead(tile), [], begin)
     arrive(person, origin, begin, .15, `Draw ${tile.text} tile`)
     draw(person, tile.outline, begin + .15, .22, `Draw ${tile.text} tile`)
     timeline.fromTo(tile.node, { backgroundColor: 'rgba(0,0,0,0)', borderColor: 'rgba(0,0,0,0)' }, { backgroundColor: tile.fill, borderColor: tile.border, duration: .065, immediateRender: false }, begin + .35)
@@ -287,21 +293,31 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
       onUpdate: () => {
         const count = Math.round(tile.text.length * writing.value)
         if (tile.typedCount !== count) { tile.copy.textContent = tile.text.slice(0, count); tile.typedCount = count }
-        let point = tile.caretPositions.get(count)
-        if (!point) {
-          const caret = relative(tile.caret.getBoundingClientRect())
-          point = { x: caret.x, y: caret.y + caret.height * .7 }
-          tile.caretPositions.set(count, point)
+        const point = tile.caretPositions.get(count)
+        if (point) {
+          cancelMotionRead(tile)
+          setCursor(person, point, `Type ${tile.text}`)
+        } else {
+          const revision = person.revision
+          queueMotionRead(tile, () => {
+            if (disposed || tile.typedCount !== count || person.revision !== revision) return
+            const caret = relative(tile.caret.getBoundingClientRect())
+            const measured = { x: caret.x, y: caret.y + caret.height * .7 }
+            tile.caretPositions.set(count, measured)
+            return () => {
+              if (!disposed && tile.typedCount === count && person.revision === revision) setCursor(person, measured, `Type ${tile.text}`)
+            }
+          })
         }
-        setCursor(person, point, `Type ${tile.text}`)
       },
     }, at + .27)
+    timeline.call(() => cancelMotionRead(tile), [], at + .39)
     timeline.fromTo(tile.name, { opacity: 0 }, { opacity: 1, duration: .001, immediateRender: false }, at + .39)
     timeline.to(tile.ghost, { autoAlpha: 0, duration: .001, immediateRender: false }, at + .39)
     if (tile.dot) timeline.fromTo(tile.dot, { opacity: 0 }, { opacity: .8, duration: .025, immediateRender: false }, at + .375)
     person.last = nameEnd
     person.finish = at + .4
-    returnHome(person, index + techWorkers.length < tiles.length ? .18 : .54, index + techWorkers.length < tiles.length ? .025 : .06)
+    returnHome(person, index + techWorkers.length < tiles.length ? .18 : .54, index + techWorkers.length < tiles.length ? .025 : .06, tile)
     person.last = undefined
   })
 
@@ -423,7 +439,9 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
 
   return () => {
     disposed = true
+    tiles.forEach(tile => cancelMotionRead(tile))
     ScrollTrigger.removeEventListener('refreshInit', measure)
+    document.fonts?.removeEventListener('loadingdone', measure)
     layer.remove()
   }
 }

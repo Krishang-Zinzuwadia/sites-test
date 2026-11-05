@@ -85,7 +85,8 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
           duration: 1.25,
           ease: 'power2.inOut',
           onUpdate: () => {
-            if (progressRef.current) progressRef.current.textContent = String(Math.round(meter.value)).padStart(2, '0')
+            const next = String(Math.round(meter.value)).padStart(2, '0')
+            if (progressRef.current && progressRef.current.textContent !== next) progressRef.current.textContent = next
           },
         }, 0)
         .to('.creation-loader__progress-fill', { scaleX: 1, duration: 1.25, ease: 'power2.inOut' }, 0)

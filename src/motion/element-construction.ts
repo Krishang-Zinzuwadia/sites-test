@@ -4,6 +4,7 @@ import { collaborators, createCursor, type Collaborator } from './design-tools'
 import { addSpecialConstruction } from './special-construction'
 import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement'
 import { getMotionRect, getCreationSourcePoint, invalidateMotionFrame } from './motion-frame'
+import { queueMotionRead, cancelMotionRead } from './motion-read'
 import './element-construction.css'
 
 type ElementConstructionOptions = {
@@ -22,7 +23,7 @@ type Point = { x: number; y: number }
 type Worker = {
   actor: Collaborator; cursor: HTMLDivElement; load: number; artwork: boolean; jobs: Job[]
   action: HTMLElement | null; setX: (value: number) => void; setY: (value: number) => void
-  x: number; y: number; label: string; edge: string; vertical: string
+  x: number; y: number; label: string; edge: string; vertical: string; revision: number
 }
 type Job = {
   leaf: Piece
@@ -168,7 +169,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
       actor, cursor, load: 0, artwork, jobs: [], action: cursor.querySelector<HTMLElement>('.assembly-cursor-action'),
       setX: gsap.quickSetter(cursor, 'x', 'px') as (value: number) => void,
       setY: gsap.quickSetter(cursor, 'y', 'px') as (value: number) => void,
-      x: NaN, y: NaN, label: '', edge: '', vertical: '',
+      x: NaN, y: NaN, label: '', edge: '', vertical: '', revision: 0,
     }
   })
   const jobs: Job[] = []
@@ -252,6 +253,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     if (disposed) return
     const host = getMotionRect(scene)
     const worker = job.worker, cursor = worker.cursor
+    ++worker.revision
     if (worker.x !== x) { worker.setX(x); worker.x = x }
     if (worker.y !== y) { worker.setY(y); worker.y = y }
     if (worker.label !== actionText) { if (worker.action) worker.action.textContent = actionText; worker.label = actionText }
@@ -267,13 +269,22 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     if (kind === 'copy' && job.copy && job.ghost) {
       const count = Math.round(job.text.length * progress.write)
       if (job.typedCount !== count) { job.copy.textContent = job.text.slice(0, count); job.typedCount = count }
-      let point = job.caretPositions.get(count)
-      if (!point) {
-        const caret = relativeRect(job.caret.getBoundingClientRect())
-        point = { x: caret.x + 3, y: caret.y + Math.min(caret.height, 13) }
-        job.caretPositions.set(count, point)
+      const point = job.caretPositions.get(count)
+      if (point) {
+        cancelMotionRead(job)
+        setCursor(job, point.x, point.y)
+      } else {
+        const revision = job.worker.revision
+        queueMotionRead(job, () => {
+          if (disposed || job.typedCount !== count || job.worker.revision !== revision) return
+          const caret = relativeRect(job.caret.getBoundingClientRect())
+          const measured = { x: caret.x + 3, y: caret.y + Math.min(caret.height, 13) }
+          job.caretPositions.set(count, measured)
+          return () => {
+            if (!disposed && job.typedCount === count && job.worker.revision === revision) setCursor(job, measured.x, measured.y)
+          }
+        })
       }
-      setCursor(job, point.x, point.y)
     } else if (kind === 'formatted') {
       const left = `${box.width * progress.write}px`
       if (job.caret.style.left !== left) job.caret.style.left = left
@@ -340,6 +351,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
       })
       measurements.forEach(({ job, box, typography, padding, borderWidth, caretHeight }) => {
         job.box = box
+        cancelMotionRead(job)
         job.caretPositions.clear()
         placeBox(job.frame, job.box)
         if (job.ghost) {
@@ -369,6 +381,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
   }
   measure()
   ScrollTrigger.addEventListener('refreshInit', measure)
+  document.fonts?.addEventListener('loadingdone', measure)
   gsap.set(leaves, { opacity: 0 })
   gsap.set(workers.map(worker => worker.cursor), { autoAlpha: 0, scale: 0.3 })
   gsap.set(jobs.flatMap(job => [job.frame, ...(job.ghost ? [job.ghost] : []), ...(job.menu ? [job.menu] : []), ...(job.pulse ? [job.pulse] : [])]), { autoAlpha: 0 })
@@ -382,6 +395,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     const handoff = workStart + writing
     const taskNumber = job.worker.jobs.indexOf(job) + 1
     timeline.call(() => {
+      cancelMotionRead(job)
       const point = liveSource()
       setCursor(job, point.x, point.y, `Task ${taskNumber} · ${job.action}`)
     }, [], at)
@@ -450,20 +464,24 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
         write: 1, duration: writing, ease: `steps(${Math.max(1, job.text.length)})`, immediateRender: false,
         onUpdate: () => render(job),
       }, workStart)
+      timeline.call(() => cancelMotionRead(job), [], handoff)
       timeline.set(job.leaf, { opacity: 1 }, handoff)
       if (job.ghost) timeline.set(job.ghost, { autoAlpha: 0 }, handoff)
     }
     timeline.to(job.frame, { autoAlpha: 0, duration: Math.max(0.012, 0.08 * unit), immediateRender: false }, handoff)
     const returnAt = start + (job.at + job.weight) * unit
     const returnDuration = .75 * unit
+    timeline.call(() => cancelMotionRead(job), [], returnAt)
     curvedTravel(job, () => cursorPoint(job.worker), liveSource, returnAt, returnDuration, 'Task complete · back to the box')
     timeline.to(job.worker.cursor, { scale: 0.18, autoAlpha: 0, duration: .08 * unit, immediateRender: false }, returnAt + returnDuration)
   }
 
   return () => {
     disposed = true
+    jobs.forEach(job => cancelMotionRead(job))
     specialCleanup()
     ScrollTrigger.removeEventListener('refreshInit', measure)
+    document.fonts?.removeEventListener('loadingdone', measure)
     layer.remove()
   }
 }
