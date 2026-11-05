@@ -27,7 +27,7 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
         const actor = collaborators[index % collaborators.length]
         const cursor = createCursor({ ...actor, name: names[index % names.length], role: item.classList.contains('site-nav') ? 'Creating navigation' : item.classList.contains('assembly-dock') ? 'Building playback' : 'Placing the details' })
         overlay.append(cursor)
-        const at = .12 + index * .11
+        const at = .03 + index * .025
         const moveX = gsap.quickSetter(cursor, 'x', 'px')
         const moveY = gsap.quickSetter(cursor, 'y', 'px')
         const point = { x: 0, y: 0 }

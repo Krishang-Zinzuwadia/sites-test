@@ -60,7 +60,7 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
     if (!enabled || !introDone || !requested || complete) return
     let previous = 0
     let position = window.scrollY
-    let velocity = Math.max(66, Math.min(90, innerHeight * .08))
+    let velocity = Math.max(90, Math.min(116, innerHeight * .12))
     const toolkit = document.getElementById('toolkit')
     document.documentElement.classList.add('auto-tour-running')
     const advance = (now: number) => {
@@ -73,7 +73,7 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
       const end = Math.max(0, document.documentElement.scrollHeight - innerHeight)
       const toolRect = toolkit?.getBoundingClientRect()
       const inspectingTools = toolRect && toolRect.top < innerHeight && toolRect.bottom > innerHeight * .2
-      const desiredSpeed = inspectingTools ? 42 : Math.max(66, Math.min(90, innerHeight * .08))
+      const desiredSpeed = inspectingTools ? 62 : Math.max(90, Math.min(116, innerHeight * .12))
       velocity += (desiredSpeed - velocity) * Math.min(1, elapsed * 3)
       position = Math.min(end, position + velocity * elapsed)
       window.scrollTo({ top: position, behavior: 'instant' })

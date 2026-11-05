@@ -155,6 +155,21 @@
 
 .assembly-contrast-check { border-color: #70b7c77a; color: #a6d8e2; }
 
+.assembly-prep-task {
+  position: absolute;
+  padding: 3px 5px 4px;
+  border-bottom: 1px solid var(--prep-color);
+  border-left: 1px solid var(--prep-color);
+  color: var(--prep-color);
+  background: #20251ef2;
+  font: 6px/1.15 var(--mono, monospace);
+  letter-spacing: 0.35px;
+  white-space: nowrap;
+  transform-origin: left center;
+  opacity: 0;
+  visibility: hidden;
+}
+
 .assembly-alignment-guides {
   position: absolute;
   color: #e5c278;

@@ -1,6 +1,7 @@
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { collaborators, createCursor, type Collaborator } from './DesignTools'
+import { constructionMenuPosition, releaseConstructionMenu } from './menuPlacement'
 import './specialConstruction.css'
 
 type SpecialConstructionOptions = {
@@ -124,10 +125,10 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
       travel(person, liveSource, to, at + .035, Math.max(.02, duration - .035), action)
     } else travel(person, person.last, to, at, duration, action)
   }
-  const returnHome = (person: Worker) => {
+  const returnHome = (person: Worker, flight = .54, shrink = .06) => {
     if (!person.last) return
-    travel(person, person.last, liveSource, person.finish, .54, 'Back to the source')
-    timeline.to(person.cursor, { autoAlpha: 0, scale: .18, duration: .06, immediateRender: false }, person.finish + .54)
+    travel(person, person.last, liveSource, person.finish, flight, 'Back to the source')
+    timeline.to(person.cursor, { autoAlpha: 0, scale: .18, duration: shrink, immediateRender: false }, person.finish + flight)
   }
   const draw = (person: Worker, outline: SVGRectElement, at: number, duration: number, action: string) => {
     const progress = { value: 0 }
@@ -202,19 +203,11 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
 
   const iconPoint = (tile: Tile): Point => ({ x: tile.iconBox.x + tile.iconBox.width / 2, y: tile.iconBox.y + tile.iconBox.height / 2 })
   const lockMenu = (tile: Tile) => {
-    const host = scene.getBoundingClientRect(), anchor = iconPoint(tile)
-    const width = Math.min(148, innerWidth - 16), height = 100
-    const left = 8 - host.left, top = 8 - host.top
-    const bottomReserve = innerWidth < 768 ? 83 : 8
-    const right = innerWidth - host.left - width - 8, bottom = innerHeight - host.top - height - bottomReserve
-    const clamp = (x: number, y: number): Box => ({ x: Math.max(left, Math.min(right, x)), y: Math.max(top, Math.min(bottom, y)), width, height })
-    const candidates = [clamp(anchor.x + 8, anchor.y + 8), clamp(anchor.x - width - 8, anchor.y + 8), clamp(anchor.x + 8, anchor.y - height - 8), clamp(anchor.x - width - 8, anchor.y - height - 8), clamp(left, top), clamp(right, top), clamp(left, bottom), clamp(right, bottom)]
-    const otherMenus = Array.from(document.querySelectorAll<HTMLElement>('[data-construction-menu]')).filter(menu => menu !== tile.menu && getComputedStyle(menu).visibility !== 'hidden' && Number(getComputedStyle(menu).opacity) > .05).map(menu => menu.getBoundingClientRect())
-    const score = (candidate: Box) => otherMenus.reduce((sum, other) => sum + Math.max(0, Math.min(candidate.x + host.left + width + 5, other.right) - Math.max(candidate.x + host.left - 5, other.left)) * Math.max(0, Math.min(candidate.y + host.top + height + 5, other.bottom) - Math.max(candidate.y + host.top - 5, other.top)), 0)
-    tile.menuBox = candidates.reduce((best, next) => score(next) < score(best) ? next : best)
+    tile.menuBox = constructionMenuPosition(tile.menu, scene, iconPoint(tile))
     place(tile.menu, tile.menuBox)
   }
   const menuEvent = (tile: Tile, action: 'open' | 'close') => {
+    if (action === 'close') releaseConstructionMenu(tile.menu)
     if (!disposed) document.dispatchEvent(new CustomEvent(`assembly:menu-${action}`, { detail: { menu: tile.menu, owner: tile.worker.cursor } }))
   }
 
@@ -264,32 +257,124 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     if (tile.dot) timeline.fromTo(tile.dot, { opacity: 0 }, { opacity: .8, duration: .025, immediateRender: false }, at + .375)
     person.last = nameEnd
     person.finish = at + .4
+    returnHome(person, index + techWorkers.length < tiles.length ? .18 : .54, index + techWorkers.length < tiles.length ? .025 : .06)
+    person.last = undefined
   })
-  techWorkers.forEach(returnHome)
 
   if (cells.length) {
-    const painters = [worker('Jun', 'Ava', true), worker('Sol', 'Eli', true), worker('Bea', 'Finn', true), worker('Otto', 'Zoe', true), worker('Luz', 'Remy', true), worker('Ash', 'Kai', true)]
+    const builderNames = ['Jun', 'Sol', 'Bea', 'Otto', 'Luz', 'Ash', 'Inez', 'Keir', 'Nia', 'Theo', 'Veda', 'Wren']
+    const coloristNames = ['Cora', 'Ezra', 'Faye', 'Hugo', 'Indi', 'Juno', 'Kian', 'Leni', 'Noor', 'Oren', 'Rhea', 'Sage']
+    const models = ['Ava', 'Eli', 'Finn', 'Zoe', 'Remy', 'Kai', 'Mia', 'Noah', 'Leo', 'Iris', 'Sam', 'You']
+    const builders = builderNames.map((name, index) => {
+      const person = worker(name, models[index], true)
+      person.cursor.classList.add('special-grid-builder')
+      return person
+    })
+    const colorists = coloristNames.map((name, index) => {
+      const person = worker(name, models[(index + 3) % models.length], true)
+      person.cursor.classList.add('special-grid-colorist')
+      const swatch = document.createElement('span')
+      swatch.className = 'special-grid-paint-swatch'
+      person.cursor.append(swatch)
+      const selection = make('special-grid-selection')
+      selection.innerHTML = '<i></i><i></i><i></i><i></i>'
+      selection.style.setProperty('--special-color', person.actor.color)
+      const click = make('special-grid-select-pulse')
+      click.style.setProperty('--special-color', person.actor.color)
+      gsap.set([selection, click], { autoAlpha: 0 })
+      return { person, swatch, selection, click }
+    })
     const maxWeek = Math.max(...cells.map(cell => Math.floor(cell.index / 7))) + 1
     const ordered = [...cells].sort((a, b) => {
       const aWeek = Math.floor(a.index / 7), bWeek = Math.floor(b.index / 7)
       return aWeek - bWeek || (aWeek % 2 ? b.index % 7 - a.index % 7 : a.index % 7 - b.index % 7)
     })
-    painters.forEach((person, workerIndex) => {
-      const assigned = ordered.filter(cell => Math.min(painters.length - 1, Math.floor(Math.floor(cell.index / 7) / maxWeek * painters.length)) === workerIndex)
-      const unit = (span - .25) / Math.max(1, assigned.length)
-      assigned.forEach((cell, index) => {
-        const at = start + .25 + index * unit
-        cell.outline.setAttribute('stroke', person.actor.color)
-        gsap.set(cell.node, { opacity: 0, backgroundColor: 'rgba(0,0,0,0)' })
-        const origin = () => pointOn(cell.outline, 0)
-        if (!person.last) arrive(person, origin, start, .25, 'Draw activity squares')
-        else travel(person, person.last, origin, at, unit * .27, 'Draw activity squares')
-        draw(person, cell.outline, at + unit * .27, unit * .48, 'Draw activity squares')
-        timeline.fromTo(cell.node, { opacity: 0, backgroundColor: 'rgba(0,0,0,0)' }, { opacity: cell.opacity, backgroundColor: cell.fill, duration: unit * .25, ease: 'none', immediateRender: false }, at + unit * .75)
-        person.last = () => pointOn(cell.outline, 1)
-        person.finish = at + unit
+    const strips = builders.map((_, workerIndex) => ordered.filter(cell => Math.min(builders.length - 1, Math.floor(Math.floor(cell.index / 7) / maxWeek * builders.length)) === workerIndex))
+    const taskSize = 7
+    const taskCount = Math.max(...strips.map(strip => Math.ceil(strip.length / taskSize)))
+    const crewStagger = .01
+    const handoffLag = .24
+    const taskPeriod = (span - crewStagger * (builders.length - 1) - handoffLag) / taskCount
+    const entry = Math.min(.20, taskPeriod * .20)
+    const quickReturn = Math.min(.20, taskPeriod * .20)
+    const unit = (taskPeriod - entry - quickReturn - .025) / taskSize
+    const neutral = '#30382b'
+
+    strips.forEach((assigned, crewIndex) => {
+      const builder = builders[crewIndex]
+      const { person: colorist, swatch, selection, click } = colorists[crewIndex]
+      const groups = Array.from({ length: Math.ceil(assigned.length / taskSize) }, (_, groupIndex) => assigned.slice(groupIndex * taskSize, (groupIndex + 1) * taskSize))
+      groups.forEach((group, groupIndex) => {
+        const taskAt = start + crewIndex * crewStagger + groupIndex * taskPeriod
+        group.forEach((cell, cellIndex) => {
+          const buildAt = taskAt + entry + cellIndex * unit
+          const colorAt = buildAt + handoffLag
+          const topLeft = (): Point => ({ x: cell.box.x + .5, y: cell.box.y + .5 })
+          const bottomRight = (): Point => ({ x: cell.box.x + cell.box.width - .5, y: cell.box.y + cell.box.height - .5 })
+          const center = (): Point => ({ x: cell.box.x + cell.box.width / 2, y: cell.box.y + cell.box.height / 2 })
+          const number = String(cell.index + 1).padStart(3, '0')
+          const paintLabel = '#' + (cell.fill.match(/\d+/g)?.slice(0, 3).map(channel => Number(channel).toString(16).padStart(2, '0')).join('').toUpperCase() ?? '30382B')
+          cell.outline.classList.add('special-grid-drag-rect')
+          cell.outline.setAttribute('stroke', builder.actor.color)
+          gsap.set(cell.outline, { autoAlpha: 0 })
+          gsap.set(cell.node, { opacity: 0, backgroundColor: 'rgba(0,0,0,0)' })
+
+          // A task is one complete seven-day column, followed by a source-box visit.
+          if (!cellIndex) arrive(builder, topLeft, taskAt, entry, `Rectangle strip ${groupIndex + 1}`)
+          else travel(builder, builder.last!, topLeft, buildAt, unit * .24, `Draw square ${number}`)
+          const dragAt = buildAt + unit * .24
+          const dragging = { value: 0 }
+          timeline.fromTo(cell.outline, { autoAlpha: 0 }, { autoAlpha: 1, duration: unit * .04, immediateRender: false }, dragAt)
+          timeline.fromTo(dragging, { value: 0 }, {
+            value: 1, duration: unit * .48, ease: 'none', immediateRender: false,
+            onUpdate: () => {
+              const draggedWidth = (cell.box.width - 1) * dragging.value
+              const draggedHeight = (cell.box.height - 1) * dragging.value
+              const width = Math.max(.5, draggedWidth)
+              const height = Math.max(.5, draggedHeight)
+              cell.outline.setAttribute('x', String(cell.box.x + .5))
+              cell.outline.setAttribute('y', String(cell.box.y + .5))
+              cell.outline.setAttribute('width', String(width))
+              cell.outline.setAttribute('height', String(height))
+              cell.outline.setAttribute('rx', String(Math.min(1, width / 2, height / 2)))
+              setCursor(builder, { x: cell.box.x + .5 + draggedWidth, y: cell.box.y + .5 + draggedHeight }, `Drag square ${number}`)
+            },
+          }, dragAt)
+          // Releasing the diagonal drag places a neutral, still-unpainted real square.
+          timeline.fromTo(cell.node, { opacity: 0, backgroundColor: neutral }, { opacity: 1, backgroundColor: neutral, duration: unit * .08, immediateRender: false }, buildAt + unit * .72)
+          timeline.to(cell.outline, { autoAlpha: 0, duration: unit * .1, immediateRender: false }, buildAt + unit * .8)
+          builder.last = bottomRight
+          builder.finish = buildAt + unit
+
+          if (!cellIndex) {
+            arrive(colorist, center, taskAt + handoffLag, entry, `Color strip ${groupIndex + 1}`)
+            timeline.set(swatch, { backgroundColor: cell.fill }, taskAt + handoffLag)
+          } else travel(colorist, colorist.last!, center, colorAt, unit * .24, `Select square ${number}`)
+          timeline.set(swatch, { backgroundColor: cell.fill }, colorAt)
+          const clickAt = colorAt + unit * .24
+          timeline.set(selection, { left: () => cell.box.x - 2, top: () => cell.box.y - 2, width: () => cell.box.width + 4, height: () => cell.box.height + 4 }, clickAt)
+          timeline.set(click, { left: () => center().x, top: () => center().y }, clickAt)
+          timeline.fromTo(selection, { autoAlpha: 0 }, { autoAlpha: 1, duration: unit * .04, immediateRender: false }, clickAt)
+          timeline.fromTo(click, { autoAlpha: 0, scale: .45 }, {
+            autoAlpha: 1, scale: 1.1, duration: unit * .09, immediateRender: false,
+            onUpdate: () => setCursor(colorist, center(), `Select square ${number}`),
+          }, clickAt)
+          timeline.to(click, { autoAlpha: 0, scale: 1.7, duration: unit * .09, immediateRender: false }, clickAt + unit * .09)
+          // The explicit selection click must finish before the final color is applied.
+          timeline.fromTo(cell.node, { opacity: 1, backgroundColor: neutral }, {
+            opacity: cell.opacity, backgroundColor: cell.fill, duration: unit * .32, ease: 'none', immediateRender: false,
+            onUpdate: () => setCursor(colorist, center(), `Paint ${paintLabel}`),
+          }, colorAt + unit * .42)
+          timeline.to(selection, { autoAlpha: 0, duration: unit * .18, immediateRender: false }, colorAt + unit * .76)
+          colorist.last = center
+          colorist.finish = colorAt + unit
+        })
+        const isLastTask = groupIndex === groups.length - 1
+        returnHome(builder, isLastTask ? .54 : quickReturn, isLastTask ? .06 : .02)
+        returnHome(colorist, isLastTask ? .54 : quickReturn, isLastTask ? .06 : .02)
+        builder.last = undefined
+        colorist.last = undefined
       })
-      returnHome(person)
     })
   }
 

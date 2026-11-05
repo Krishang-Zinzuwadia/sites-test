@@ -8,8 +8,6 @@ type CreationBoxProps = {
   onReady: () => void
 }
 
-const shardColors = ['#a8c99a', '#f18766', '#e8e5d5', '#b9add2', '#d5bd7d', '#8eb8b0']
-
 /** The same physical box is both the opening title and every scene's origin. */
 export default function CreationBox({ enabled, replayKey, onReady }: CreationBoxProps) {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -35,13 +33,15 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
     let lastSpawn = -Infinity
     const ctx = gsap.context(() => {}, root)
     const art = source.querySelector('.creation-box__art')
-    const flaps = source.querySelectorAll('.creation-box__flap')
     const lid = source.querySelector('.creation-box__lid')
-    const sparks = source.querySelectorAll('.creation-box__shard')
     const glow = source.querySelector('.creation-box__glow')
     const ring = source.querySelector('.creation-box__ring')
     const echo = source.querySelector('.creation-box__echo')
-    const fragments = source.querySelectorAll('.creation-box__fragment')
+    const aperture = source.querySelector('.creation-box__energy')
+    const desk = root.querySelector<HTMLElement>('.creation-workstation__desk')
+    const chair = root.querySelector<HTMLElement>('.creation-workstation__chair')
+    const builders = root.querySelectorAll<HTMLElement>('.creation-builder')
+    const openLid = { x: -2, y: -23, rotation: -9 }
     const finish = () => {
       if (disposed || isReady) return
       isReady = true
@@ -57,11 +57,12 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
 
     ctx.add(() => {
       gsap.set(source, { x: 0, y: 0, scale: 1, opacity: 1 })
-      gsap.set(flaps, { scale: 1, rotation: 0, opacity: 1 })
-      gsap.set(lid, { opacity: 0 })
-      gsap.set(sparks, { x: 0, y: 0, opacity: 0, scale: 0 })
-      gsap.set(fragments, { x: 0, y: 0, opacity: 0, scale: .1 })
+      gsap.set(art, { x: 0, y: 0, scale: 1, rotation: 0 })
+      gsap.set(lid, { ...openLid, opacity: 1, transformOrigin: '50% 60%' })
+      gsap.set(aperture, { opacity: .35, scale: 1 })
       gsap.set([glow, ring, echo], { opacity: 0 })
+      gsap.set([desk, chair], { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 })
+      gsap.set(builders, { opacity: 0, scale: 1 })
 
       if (!motionAllowed) {
         finish()
@@ -72,9 +73,20 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
       const introScale = window.innerWidth < 641 ? 3.4 : 2.65
       const introX = window.innerWidth / 2 - (rect.left + rect.width / 2)
       const introY = window.innerHeight * 0.48 - (rect.top + rect.height / 2)
+      const launch = { x: window.innerWidth / 2, y: window.innerHeight * .48 - 10 }
+      const home = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      const furniture = [desk, chair].filter((piece): piece is HTMLElement => piece !== null)
+      const furnitureTargets = furniture.map((piece) => {
+        const pieceRect = piece.getBoundingClientRect()
+        return { x: pieceRect.left + pieceRect.width / 2, y: pieceRect.top + pieceRect.height / 2 }
+      })
+      furniture.forEach((piece, i) => {
+        gsap.set(piece, { x: launch.x - furnitureTargets[i].x, y: launch.y - furnitureTargets[i].y, scale: .08, opacity: 0, rotation: i ? 12 : -10 })
+      })
+      gsap.set(builders, { x: launch.x, y: launch.y, opacity: 0, scale: .6 })
       gsap.set(source, { x: introX, y: introY, scale: introScale })
-      gsap.set(flaps, { scale: 0.12, opacity: 0, transformOrigin: '50% 100%' })
       gsap.set(lid, { opacity: 1, x: 0, y: 0, rotation: 0, transformOrigin: '50% 60%' })
+      gsap.set(aperture, { opacity: 0 })
       gsap.set(overlayRef.current, { opacity: 1, visibility: 'visible' })
       gsap.set('.creation-loader__progress-fill', { scaleX: 0 })
       gsap.set('.creation-box__label', { opacity: 0 })
@@ -83,79 +95,64 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
 
       opening = gsap.timeline()
       opening
-        .fromTo('.creation-loader__copy', { y: 14, opacity: 0 }, { y: 0, opacity: 1, duration: 0.55, ease: 'power2.out' }, 0)
+        .fromTo('.creation-loader__copy', { y: 10, opacity: 0 }, { y: 0, opacity: 1, duration: .45, ease: 'power2.out' }, 0)
         .to(meter, {
           value: 100,
-          duration: 1.6,
+          duration: 1.25,
           ease: 'power2.inOut',
           onUpdate: () => {
             if (progressRef.current) progressRef.current.textContent = String(Math.round(meter.value)).padStart(2, '0')
           },
         }, 0)
-        .to('.creation-loader__progress-fill', { scaleX: 1, duration: 1.6, ease: 'power2.inOut' }, 0)
-        .fromTo('.creation-box__energy', { opacity: 0, scale: 0.5 }, { opacity: 0.85, scale: 1, duration: 1.35, ease: 'power2.in' }, 0.15)
-        .to(art, { y: 2, scaleX: 1.04, scaleY: .94, duration: .25, ease: 'sine.inOut' }, 1.23)
-        .to(art, { y: -4, scaleX: .98, scaleY: 1.05, duration: .18, ease: 'power2.out' }, 1.48)
-        .to(lid, { x: 7, y: -45, rotation: -24, opacity: 0, duration: .66, ease: 'power3.out' }, 1.51)
-        .to(flaps, { scale: 1, opacity: 1, duration: 0.6, stagger: 0.06, ease: 'back.out(1.3)' }, 1.56)
-        .fromTo(ring, { scale: .25, opacity: .8, rotationX: 58 }, { scale: 3.8, opacity: 0, duration: 1.05, ease: 'power3.out' }, 1.55)
-        .fromTo(echo, { scale: .2, opacity: .55, rotationX: 58 }, { scale: 3, opacity: 0, duration: .95, ease: 'power2.out' }, 1.69)
-        .fromTo(glow, { scale: .5, opacity: .75 }, { scale: 2.4, opacity: 0, duration: .9, ease: 'power2.out' }, 1.55)
-        .to(fragments, {
-          x: (i: number) => Math.cos(-Math.PI + i * Math.PI / (fragments.length - 1)) * (50 + i % 3 * 14),
-          y: (i: number) => -34 - Math.sin(i * Math.PI / (fragments.length - 1)) * (55 + i % 2 * 14),
-          rotation: (i: number) => (i % 2 ? 1 : -1) * (10 + i * 5),
-          scale: 1,
-          opacity: .9,
-          duration: .58,
-          stagger: .018,
-          ease: 'power3.out',
-        }, 1.56)
-        .to(fragments, { y: '-=12', opacity: 0, scale: 1.12, duration: .32, stagger: .018, ease: 'sine.in' }, 2.02)
-        .to('.creation-box__energy', { opacity: 0, duration: 0.5 }, 1.7)
-        .to(sparks, {
-          x: (i: number) => Math.cos((i / sparks.length) * Math.PI * 2) * (42 + (i % 3) * 13),
-          y: (i: number) => Math.sin((i / sparks.length) * Math.PI * 2) * 50 - 18,
-          rotation: (i: number) => i * 61,
-          scale: 1,
-          opacity: 1,
-          duration: 0.38,
-          ease: 'power3.out',
-        }, 1.57)
-        .to(sparks, { opacity: 0, scale: 0.3, duration: 0.4, ease: 'power2.in' }, 1.9)
-        .to('.creation-loader__copy, .creation-loader__footer', { opacity: 0, y: -8, duration: 0.3 }, 1.88)
-        .to(overlayRef.current, { opacity: 0, duration: 0.45, ease: 'power2.inOut' }, 1.98)
-        .to(source, { x: 0, y: 0, scale: 1, duration: 0.62, ease: 'power3.inOut' }, 1.82)
-        .to(art, { y: 0, rotation: 0, scaleX: 1, scaleY: 1, duration: .4, ease: 'sine.inOut' }, 1.9)
-        .to('.creation-box__label', { opacity: 1, duration: 0.3 }, 2.22)
-        .call(finish, [], 2.46)
+        .to('.creation-loader__progress-fill', { scaleX: 1, duration: 1.25, ease: 'power2.inOut' }, 0)
+        .to(art, { y: 2, scaleX: 1.025, scaleY: .965, duration: .23, ease: 'power2.inOut' }, 1.02)
+        .to(lid, { ...openLid, duration: .48, ease: 'power3.out' }, 1.25)
+        .to(art, { y: 0, scaleX: 1, scaleY: 1, duration: .35, ease: 'power2.out' }, 1.25)
+        .fromTo(aperture, { scale: .6, opacity: 0 }, { scale: 1, opacity: .6, duration: .35, ease: 'power2.out' }, 1.25)
+        .fromTo(ring, { scale: .7, opacity: .4 }, { scale: 1.9, opacity: 0, duration: .6, ease: 'power2.out' }, 1.27)
+        .fromTo(echo, { scale: .7, opacity: .22 }, { scale: 1.65, opacity: 0, duration: .5, ease: 'power2.out' }, 1.38)
+        .fromTo(glow, { scale: .8, opacity: .25 }, { scale: 1.35, opacity: 0, duration: .55, ease: 'power2.out' }, 1.27)
+        .to(aperture, { opacity: .3, duration: .35 }, 1.63)
+        .to('.creation-loader__copy, .creation-loader__footer', { opacity: 0, y: -6, duration: .25 }, 1.48)
+        .to(overlayRef.current, { opacity: 0, duration: .4, ease: 'power2.inOut' }, 1.6)
+        .to(source, { x: 0, y: 0, scale: 1, duration: .58, ease: 'power3.inOut' }, 1.46)
+        .to('.creation-box__label', { opacity: 1, duration: .22 }, 1.82)
+
+      // Two builders physically carry furniture out of the opening, place it,
+      // and return through the same source before the main cursor crew starts.
+      furniture.forEach((piece, i) => {
+        const emitAt = 1.28 + i * .07
+        const target = furnitureTargets[i]
+        const builder = builders[i]
+        opening!
+          .to(piece, { opacity: 1, scale: .32, y: launch.y - target.y - 29, duration: .14, ease: 'power2.out' }, emitAt)
+          .to(piece, { x: 0, y: 0, scale: 1, rotation: 0, duration: .59, ease: 'power3.inOut' }, emitAt + .14)
+          .to(builder, { opacity: 1, scale: 1, duration: .12 }, emitAt)
+          .to(builder, { x: launch.x + 10, y: launch.y - 26, duration: .14, ease: 'power2.out' }, emitAt)
+          .to(builder, { x: target.x + 15, y: target.y - 13, duration: .59, ease: 'power3.inOut' }, emitAt + .14)
+          .to(builder, { x: target.x + 8, y: target.y + 2, duration: .08, ease: 'power2.inOut' }, emitAt + .73)
+          .to(builder, { x: home.x, y: home.y, scale: .35, duration: .19, ease: 'power2.in' }, emitAt + .81)
+          .to(builder, { opacity: 0, duration: .04 }, emitAt + .96)
+      })
+      opening.call(finish, [], 2.36)
     })
 
     const spawn = () => {
       if (!isReady || !motionAllowed || disposed) return
       const now = performance.now()
-      if (now - lastSpawn < 200) return
+      if (now - lastSpawn < 450) return
       lastSpawn = now
       closing?.kill()
       bursts?.kill()
       ctx.add(() => {
-        gsap.killTweensOf([art, glow, lid, ...flaps, ...sparks])
-        gsap.set(lid, { opacity: 0 })
-        gsap.to(flaps, { scale: 1, opacity: 1, duration: .3, ease: 'sine.out' })
+        gsap.killTweensOf([art, glow, lid, aperture])
+        gsap.to(lid, { ...openLid, opacity: 1, duration: .25, ease: 'power2.out' })
         const label = source.querySelector('.creation-box__label')
         if (label) label.textContent = 'THE IDEA BOX'
         bursts = gsap.timeline()
-          .fromTo(art, { scale: 1 }, { scale: 1.12, duration: 0.13, yoyo: true, repeat: 1, ease: 'sine.inOut' })
-          .fromTo(glow, { scale: 0.6, opacity: 0.32 }, { scale: 1.6, opacity: 0, duration: 0.55, ease: 'power2.out' }, 0)
-          .fromTo(sparks, { x: 0, y: -5, scale: 0.4, opacity: 0.8 }, {
-            x: (i: number) => Math.cos((i / sparks.length) * Math.PI * 2) * (23 + i % 3 * 7),
-            y: (i: number) => -18 - Math.abs(Math.sin((i / sparks.length) * Math.PI * 2)) * (24 + i % 4 * 7),
-            rotation: (i: number) => i * 48,
-            scale: 0.8,
-            duration: 0.48,
-            ease: 'power2.out',
-          }, 0)
-          .to(sparks, { opacity: 0, scale: 0.15, duration: 0.24 }, 0.23)
+          .fromTo(art, { scale: 1 }, { scale: 1.035, duration: .2, yoyo: true, repeat: 1, ease: 'sine.inOut' })
+          .fromTo(glow, { scale: .8, opacity: .16 }, { scale: 1.2, opacity: 0, duration: .45, ease: 'sine.out' }, 0)
+          .fromTo(aperture, { opacity: .6 }, { opacity: .3, duration: .45, ease: 'sine.out' }, 0)
       })
     }
     const settle = () => {
@@ -163,9 +160,9 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
       closing?.kill()
       ctx.add(() => {
         closing = gsap.timeline({ delay: 1.1 })
-          .to(flaps, { scale: .12, opacity: 0, duration: .5, stagger: .06, ease: 'sine.inOut' })
-          .fromTo(lid, { y: -18, x: 2, rotation: -8, opacity: 0 }, { y: 0, x: 0, rotation: 0, opacity: 1, duration: .5, ease: 'power2.out' }, '-=.22')
-          .fromTo(art, { y: 0 }, { y: 2, scaleY: .97, duration: .15, yoyo: true, repeat: 1, ease: 'sine.inOut' }, '-=.06')
+          .to(lid, { y: 0, x: 0, rotation: 0, duration: .5, ease: 'power2.inOut' })
+          .to(aperture, { opacity: 0, duration: .3 }, '<')
+          .fromTo(art, { y: 0 }, { y: 1, scaleY: .985, duration: .16, yoyo: true, repeat: 1, ease: 'sine.inOut' }, '-=.06')
           .call(() => {
             const label = source.querySelector('.creation-box__label')
             if (label) label.textContent = 'IDEAS, ASSEMBLED'
@@ -212,33 +209,58 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
           <span className="creation-loader__footnote">EVERYTHING STARTS WITH AN IDEA.</span>
         </div>
       </div>
-      <div ref={sourceRef} data-creation-source data-ready="false" className={`creation-box${loading ? ' is-loading' : ''}`} aria-hidden="true">
-        <div className="creation-box__glow" />
-        <div className="creation-box__ring" />
-        <div className="creation-box__echo" />
-        <div className="creation-box__art">
-          <svg viewBox="-12 -14 152 154" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <ellipse cx="64" cy="124" rx="49" ry="10" fill="#000" opacity=".2" />
-            <path d="M10 57L64 30L118 57L64 84L10 57Z" fill="#343E2D" stroke="#171916" strokeWidth="1.4" />
-            <path d="M20 58L64 37L108 58L64 78L20 58Z" fill="#526044" />
-            <g className="creation-box__energy">
-              <path d="M40 57L64 45L88 57L64 69L40 57Z" fill="#D9E6B2" />
-              <path d="M64 55V9M47 58L29 26M81 58L99 26" stroke="#D9E6B2" strokeWidth="2" strokeLinecap="round" opacity=".55" />
-            </g>
-            <g className="creation-box__flap"><path d="M10 57L64 30L44 3L-10 30L10 57Z" fill="#D8DFBC" stroke="#7C8D65" strokeWidth="1.2" strokeLinejoin="round" /><path d="M10 57L64 30" stroke="#63774E" strokeWidth="1.6" /><path d="M-1 30L42 9" stroke="#F2F0DD" strokeWidth="1.1" opacity=".65" /></g>
-            <g className="creation-box__flap"><path d="M64 30L118 57L139 31L85 4L64 30Z" fill="#A8C99A" stroke="#6B815C" strokeWidth="1.2" strokeLinejoin="round" /><path d="M64 30L118 57" stroke="#63774E" strokeWidth="1.6" /><path d="M87 10L130 32" stroke="#D6E2BE" strokeWidth="1.1" opacity=".7" /></g>
-            <path d="M10 57L64 84V124L10 97V57Z" fill="#E5E2CE" stroke="#9D9F87" strokeWidth="1.2" strokeLinejoin="round" />
-            <path d="M64 84L118 57V97L64 124V84Z" fill="#B5C29B" stroke="#7C8D65" strokeWidth="1.2" strokeLinejoin="round" />
-            <path d="M17 65L56 85M17 70L35 79" stroke="#F8F4E4" strokeWidth="1.3" opacity=".85" />
-            <path d="M87 73L100 67V84L87 90V73Z" fill="#F18766" />
-            <path d="M89.5 76L97 72.3M89.5 79L95 76.3" stroke="#9E5641" strokeWidth=".9" />
-            <path d="M29 87L42 93V105L29 99V87Z" fill="#36452F" />
-            <path d="M35.5 91.5V100M32 94L39 97.5M32 98L39 94" stroke="#C2D4A4" strokeWidth="1.1" strokeLinecap="round" />
-            <g className="creation-box__lid"><path d="M10 57L64 30L118 57L64 84L10 57Z" fill="#DCDDC4" stroke="#869271" strokeWidth="1.4" strokeLinejoin="round" /><path d="M10 57L64 30L88 42L34 69L10 57Z" fill="#C0D1A9" /><path d="M49 37L104 64L91 70L36 43L49 37Z" fill="#EDE8D2" /><path d="M64 42L81 50L64 59L47 50L64 42Z" fill="#F18766" /><path d="M64 46V55M60 48L68 52M60 52L68 48" stroke="#86513E" strokeWidth="1.2" strokeLinecap="round" /></g>
+      <div className={`creation-workstation${loading ? ' is-loading' : ''}`} aria-hidden="true">
+        <div className="creation-workstation__desk">
+          <svg viewBox="0 0 120 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="61" cy="89" rx="53" ry="5" fill="#000" opacity=".18" />
+            <path d="M17 36L22 38V84L17 82V36Z" fill="#8B9E79" />
+            <path d="M101 34L106 32V77L101 80V34Z" fill="#6F8261" />
+            <path d="M41 45L46 47V93L41 91V45Z" fill="#AEBB9A" />
+            <path d="M12 29L78 14L113 31L46 48L12 33V29Z" fill="#91A27E" stroke="#718464" strokeWidth=".7" strokeLinejoin="round" />
+            <path d="M12 29L78 14L113 31L46 45L12 29Z" fill="#D0D6BC" stroke="#E1E4CF" strokeWidth=".7" strokeLinejoin="round" />
+            <path d="M49 49L78 42V58L49 65V49Z" fill="#849873" />
+            <path d="M58 52L69 49.5" stroke="#C2CEAC" strokeWidth="1.5" strokeLinecap="round" />
+            <path d="M46 49V91" stroke="#D7DEC4" strokeOpacity=".35" />
           </svg>
         </div>
-        {Array.from({ length: 24 }, (_, i) => <span key={i} className={`creation-box__shard creation-box__shard--${i % 3}`} style={{ backgroundColor: shardColors[i % shardColors.length] }} />)}
-        {Array.from({ length: 7 }, (_, i) => <span key={`fragment-${i}`} className={`creation-box__fragment creation-box__fragment--${i % 3}`} style={{ color: shardColors[i % shardColors.length] }}>{i % 3 === 1 ? 'T' : i % 3 === 2 ? '✳' : ''}</span>)}
+        <div className="creation-workstation__chair">
+          <svg viewBox="0 0 48 86" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="25" cy="80" rx="20" ry="4" fill="#000" opacity=".18" />
+            <path d="M26 49V73M26 72L9 79M26 72L43 78M26 72L27 83" stroke="#7D8B70" strokeWidth="3" strokeLinecap="round" />
+            <path d="M31 18L37 43" stroke="#9DA98D" strokeWidth="3" strokeLinecap="round" />
+            <path d="M19 8L31 3C34 2 37 3 38 7L45 27C46 30 45 32 42 33L31 38C28 39 26 37 25 34L18 14C17 11 17 9 19 8Z" fill="#B26E55" stroke="#CA8569" strokeWidth=".8" />
+            <path d="M21 9L32 5C34 4 35 5 36 8L42 26C43 28 42 29 40 30L30 34" stroke="#E5A080" strokeWidth="1" strokeLinecap="round" />
+            <path d="M9 43L27 35L44 43V47L26 56L9 47V43Z" fill="#A96A51" />
+            <path d="M9 43L27 35L44 43L26 51L9 43Z" fill="#DE9877" stroke="#E9AE8E" strokeWidth=".7" strokeLinejoin="round" />
+          </svg>
+        </div>
+      </div>
+      <div className="creation-builder creation-builder--mira" aria-hidden="true"><svg viewBox="0 0 24 28" fill="none"><path d="M3 2L20 16L12 17L8 25L3 2Z" fill="currentColor" stroke="#171916" strokeWidth="1.6" strokeLinejoin="round" /></svg><span>Mira <i>· desk</i></span></div>
+      <div className="creation-builder creation-builder--jules" aria-hidden="true"><svg viewBox="0 0 24 28" fill="none"><path d="M3 2L20 16L12 17L8 25L3 2Z" fill="currentColor" stroke="#171916" strokeWidth="1.6" strokeLinejoin="round" /></svg><span>Jules <i>· chair</i></span></div>
+      <div ref={sourceRef} data-creation-source data-ready="false" className={`creation-box${loading ? ' is-loading' : ''}`} aria-hidden="true">
+        <div className="creation-box__glow" />
+        <svg className="creation-box__ring" viewBox="0 0 100 100" fill="none"><path d="M50 5L94 27V73L50 95L6 73V27L50 5Z" stroke="currentColor" strokeWidth=".7" /></svg>
+        <svg className="creation-box__echo" viewBox="0 0 100 100" fill="none"><path d="M50 5L94 27V73L50 95L6 73V27L50 5Z" stroke="currentColor" strokeWidth=".6" /></svg>
+        <div className="creation-box__art">
+          <svg viewBox="0 -8 128 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="64" cy="121" rx="47" ry="6" fill="#000" opacity=".22" />
+            <path d="M12 46L64 20L116 46L64 72L12 46Z" fill="#72816A" stroke="#87957B" strokeWidth="1" strokeLinejoin="round" />
+            <path d="M20 46L64 24L108 46L64 68L20 46Z" fill="#253022" />
+            <path className="creation-box__energy" d="M28 46L64 28L100 46L64 64L28 46Z" fill="#B8D4A0" />
+            <path d="M12 46L64 72V116L12 90V46Z" fill="#DCDCCB" stroke="#B4B9A3" strokeWidth="1" strokeLinejoin="round" />
+            <path d="M64 72L116 46V90L64 116V72Z" fill="#9DAF8C" stroke="#7F9271" strokeWidth="1" strokeLinejoin="round" />
+            <path d="M64 74V113" stroke="#E4E7CE" strokeOpacity=".3" />
+            <path d="M32 71L45 77.5V86L32 79.5V71Z" fill="#ED8A6A" />
+            <path d="M83 77L98 69.5V74L83 81.5V77Z" fill="#647A55" />
+            <g className="creation-box__lid">
+              <path d="M12 39L64 13L116 39V47L64 73L12 47V39Z" fill="#A8B999" stroke="#7B8D6F" strokeWidth="1" strokeLinejoin="round" />
+              <path d="M12 39L64 65V73L12 47V39Z" fill="#C2CEAF" />
+              <path d="M12 39L64 13L116 39L64 65L12 39Z" fill="#E7E6D7" stroke="#C8CDB8" strokeWidth="1" strokeLinejoin="round" />
+              <path d="M18 39L64 16L110 39" stroke="#F4F2E6" strokeOpacity=".8" strokeLinecap="round" />
+              <path d="M55 37L64 32.5L73 37L64 41.5L55 37Z" fill="#A4BD91" />
+            </g>
+          </svg>
+        </div>
         <span className="creation-box__label">THE IDEA BOX</span>
       </div>
     </div>
