@@ -98,7 +98,7 @@ async function main() {
       const onData = chunk => {
         buffer += chunk.toString('utf8')
         if (buffer.includes('\u0003')) { cleanup(); reject(new Error('Upload cancelled')); return }
-        if (buffer.includes('\n')) { cleanup(); resolve(buffer.slice(0, buffer.indexOf('\n'))); }
+        if (/[\r\n]/.test(buffer)) { cleanup(); resolve(buffer.split(/[\r\n]/, 1)[0]); }
       }
       const onEnd = () => { cleanup(); resolve(buffer) }
       const cleanup = () => {
@@ -125,3 +125,4 @@ if (require.main === module) main().then(result => {
 })
 
 module.exports = { collectAssets, hashAsset, uploadAssets }
+
