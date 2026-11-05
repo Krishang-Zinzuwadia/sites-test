@@ -1,5 +1,65 @@
 # Assembled
 
-An original portfolio assembled by six design collaborators as you scroll.
+A concept portfolio that feels like collaborators are designing it together as you scroll. Built with Vite, React, TypeScript, GSAP and original inline SVG artwork.
 
-Built with Vite, React, TypeScript and GSAP. Deployment: Cloudflare at sites-test.krishang.dev.
+## Run
+
+Requires Node.js 22.23+, 24.22+, or 26.12+ for the Cloudflare CLI.
+
+```sh
+npm install
+npm run dev
+```
+
+The development server starts at http://localhost:5173. `npm run build` creates the static `dist/` site; `npm run preview` previews the production build.
+
+## Behavior
+
+- The illustrated opening assembles automatically. Later sections follow scroll progress and reverse when scrolling upward.
+- Six collaborators have distinct jobs: drawing frames, creating text boxes, typing copy, choosing typography, applying color, building components and aligning the layout. Contextual property panels and guides make their actions visible.
+- The project grid assembles one row at a time; each case-study button opens a keyboard accessible dialog.
+- Toolkit categories filter locally. The illustrative activity grid supports arrow-key exploration.
+- The bottom dock replays the composition, switches motion off/on, and reports scroll progress.
+- OS reduced-motion preference shows the completed layout immediately. Normal text and links remain semantic HTML.
+
+## Personalize
+
+This is explicitly a **fictional concept portfolio**, not a real profile. Change the Alex Morgan profile and `hello@example.com` placeholders in `src/App.tsx` and `src/components/PortfolioSections.tsx` before using it as a personal site. The projects, experience and contribution activity are demonstration content. All illustrations are original SVG code in `src/components/Illustrations.tsx`.
+
+- `src/App.tsx`: navigation, profile, About and controls.
+- `src/styles.css`: overall composition, typography and responsive rules.
+- `src/components/PortfolioSections.tsx`: projects, case studies, experience, toolkit, demonstration activity and contact.
+- `src/components/portfolio-sections.css`: section styling.
+- `src/motion/useAssembly.ts`: GSAP timelines, scroll boundaries and lifecycle cleanup.
+- `src/motion/assembly.css`: cursors, selection frames and handles.
+
+Google Fonts supplies Manrope, DM Sans and IBM Plex Mono; system fallbacks are configured. The site needs no backend or API key. Cursors simulate collaboration; they are not live users.
+
+## Build and preview
+
+```sh
+npm run build
+npm run preview
+```
+
+Automated tests are intentionally absent. They will only be added after the finished site is approved by its owner.
+
+## Deploy to Cloudflare
+
+The site uses Workers Static Assets, configured in `cloudflare.config.ts` for the `sites-test` Worker and `sites-test.krishang.dev`. A separate Vite configuration produces Cloudflare Build Output while preserving the regular local preview commands.
+
+```sh
+npx cf auth login
+npm run deploy
+```
+
+For a build and deployment check without publishing:
+
+```sh
+npm run build:cloudflare
+npx cf deploy --prebuilt --mode production --dry-run
+```
+
+`npm run deploy` builds and publishes the site and its configured custom domain. For CI, provide `CLOUDFLARE_API_TOKEN` through the CI secret store. Credentials, local Cloudflare output, and environment files are excluded from Git.
+
+The optional `node scripts/cloudflare-assets.cjs manifest` command describes the built assets for the [Cloudflare direct-upload API](https://developers.cloudflare.com/workers/static-assets/direct-upload/). Its `upload` mode reads one JSON object `{ "jwt": "...", "buckets": [], "accountId": "..." }` from standard input and returns JSON containing a completion `jwt` and an upload report. Capture its output securely; it contains a short-lived credential. The helper never stores credentials and does not create or deploy a Worker.

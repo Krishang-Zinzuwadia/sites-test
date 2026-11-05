@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.cloudflare/
+.dev.vars*
+.env*
+*.tsbuildinfo
+.openai/local/
+qa/
+test-results/
+playwright-report/
+preview-*.png
+.cloudflare/
+.openai/

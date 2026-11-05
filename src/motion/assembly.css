@@ -1,0 +1,216 @@
+.assembly-scene {
+  position: relative;
+}
+
+.assembly-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  overflow: visible;
+  border-radius: inherit;
+  isolation: isolate;
+  user-select: none;
+}
+
+.assembly-overlay,
+.assembly-overlay * {
+  pointer-events: none !important;
+}
+
+.assembly-target-overlay {
+  position: absolute;
+  color: var(--collaborator-color);
+  transform-origin: center;
+}
+
+.assembly-wireframe {
+  position: absolute;
+  color: #f18766;
+  opacity: 0;
+  visibility: hidden;
+  background: #f1876605;
+  border-radius: 2px;
+}
+
+.assembly-wireframe > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.assembly-draw-stroke {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.assembly-frame-label {
+  position: absolute;
+  left: 4px;
+  top: -14px;
+  color: #f18766;
+  font: 6px/1.2 var(--mono, monospace);
+  letter-spacing: 1px;
+}
+
+.assembly-section-outline {
+  position: absolute;
+  inset: -8px;
+  border: 1px dashed #f1876645;
+  border-radius: 3px;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.assembly-section-tag {
+  position: absolute;
+  top: -16px;
+  left: 0;
+  padding: 3px 5px;
+  background: #292a22;
+  color: #f18766;
+  border-radius: 3px 3px 0 0;
+  font: 6px/1.2 var(--mono, monospace);
+  letter-spacing: 0.7px;
+  white-space: nowrap;
+}
+
+.assembly-type-ghost {
+  position: absolute;
+  z-index: 3;
+  overflow: visible;
+  opacity: 0;
+  visibility: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  margin: 0;
+  padding: 0;
+}
+
+.assembly-type-caret {
+  display: inline-block;
+  width: 1px;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: -0.14em;
+  background: #a8c99a;
+  box-shadow: 0 0 8px #a8c99a40;
+}
+
+.assembly-alignment-guides {
+  position: absolute;
+  color: #e5c278;
+  opacity: 0;
+  visibility: hidden;
+  transform-origin: left center;
+}
+
+.assembly-guide-vertical,
+.assembly-guide-horizontal {
+  position: absolute;
+  display: block;
+  border-color: #e5c278b0;
+}
+
+.assembly-guide-vertical { left: 10px; top: -14px; bottom: -14px; border-left: 1px dashed; }
+.assembly-guide-horizontal { left: -14px; right: -14px; top: 10px; border-top: 1px dashed; }
+.assembly-dimension {
+  position: absolute;
+  left: 20px;
+  bottom: -8px;
+  padding: 3px 5px;
+  border: 1px solid #e5c27870;
+  border-radius: 3px;
+  background: #282a22;
+  color: #e5c278;
+  font: 7px/1 var(--mono, monospace);
+  white-space: nowrap;
+}
+
+.assembly-selection {
+  position: absolute;
+  inset: -3px;
+  border: 1px solid var(--collaborator-color);
+  border-radius: 1px;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.assembly-resize-handle {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  box-sizing: border-box;
+  background: #fffdf9;
+  border: 1px solid var(--collaborator-color);
+}
+
+.assembly-resize-handle--nw { top: -3px; left: -3px; }
+.assembly-resize-handle--ne { top: -3px; right: -3px; }
+.assembly-resize-handle--se { bottom: -3px; right: -3px; }
+.assembly-resize-handle--sw { bottom: -3px; left: -3px; }
+
+/* A compact, familiar multiplayer cursor: an arrow and a small attached name. */
+.assembly-cursor {
+  position: absolute;
+  width: 20px;
+  height: 25px;
+  z-index: 8;
+  color: var(--collaborator-color);
+  opacity: 0;
+  visibility: hidden;
+  transform-origin: 2px 2px;
+  filter: drop-shadow(0 1px 1px rgb(38 39 32 / 12%));
+}
+
+.assembly-cursor-arrow {
+  display: block;
+  width: 20px;
+  height: 25px;
+  overflow: visible;
+}
+
+.assembly-cursor-arrow path {
+  fill: currentColor;
+  stroke: #fffdf9;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.assembly-cursor-name {
+  position: absolute;
+  top: 20px;
+  left: 13px;
+  padding: 3px 7px 4px;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 4px 4px 4px 1px;
+  background: var(--collaborator-color);
+  color: #292d25;
+  font: 600 10px/1.1 'Inter', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .assembly-cursor-name { font-size: 9px; padding: 3px 6px; }
+  .assembly-selection { inset: -2px; }
+  .assembly-frame-label { font-size: 5px; }
+  .assembly-section-outline { inset: -4px; }
+  .assembly-cursor[data-edge='right'] .assembly-cursor-name,
+  .assembly-cursor[data-edge='right'] .assembly-cursor-action { left: auto; right: 3px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assembly-overlay { display: none; }
+  .assembly-scene [data-assemble] {
+    transform: none !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    clip-path: none !important;
+  }
+}
