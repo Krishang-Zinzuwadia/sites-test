@@ -4,12 +4,18 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { collaborators, createCursor, createToolPanel } from './design-tools';
 import { addElementConstruction } from './element-construction';
 import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement';
+import { getCreationSourcePoint, getMotionRect, getMotionScrollLimit, getMotionViewport, invalidateMotionFrame, retainMotionFrame } from './motion-frame';
 import './assembly.css';
 
 type AssemblyKind = 'text' | 'card' | 'art' | 'line';
 type Box = { x: number; y: number; width: number; height: number };
 type Point = { x: number; y: number };
 type Motion = { x: number; y: number; rotation: number; scale: number; opacity: number };
+type CursorControl = {
+  x: number; y: number; edge: string; vertical: string;
+  setX: (value: number) => void; setY: (value: number) => void;
+  setScale: (value: number) => void; flush: () => void;
+};
 type ToolKind = 'layout' | 'text' | 'font' | 'color' | 'spacing';
 type TargetPlan = {
   target: HTMLElement; kind: AssemblyKind; shell: HTMLDivElement; frame: HTMLDivElement;
@@ -28,6 +34,7 @@ type ScenePlan = {
   timeline?: gsap.core.Timeline; trigger?: ScrollTrigger; intro: boolean; introComplete?: boolean;
   onIntroProgress?: (progress: number) => void; onIntroComplete?: () => void;
   constructionCleanup?: () => void;
+  invalidateCaret?: () => void;
 };
 
 const motionProperties = ['transform', 'translate', 'rotate', 'scale', 'opacity', 'visibility', 'clip-path', 'will-change', 'filter'];
@@ -106,6 +113,7 @@ function positionBox(node: HTMLElement, box: Box) {
   Object.assign(node.style, { left: `${box.x}px`, top: `${box.y}px`, width: `${box.width}px`, height: `${box.height}px` });
 }
 function measureScene(plan: ScenePlan) {
+  invalidateMotionFrame();
   // Temporarily remove only the transforms we own; restore the identical values
   // so a refresh measures finished layout without changing GSAP's live cache.
   const saved = plan.targets.map(({ target }) => ({ value: target.style.getPropertyValue('transform'), priority: target.style.getPropertyPriority('transform') }));
@@ -139,21 +147,22 @@ function measureScene(plan: ScenePlan) {
     if (saved[i].value) target.style.setProperty('transform', saved[i].value, saved[i].priority);
     else target.style.removeProperty('transform');
   });
+  plan.invalidateCaret?.();
+  invalidateMotionFrame();
 }
 const sceneUnits = 10.4;
 function sourcePoint(plan: ScenePlan, at: number, live = false): Point {
   if (!live && plan.sourceOrigins.has(at)) return plan.sourceOrigins.get(at)!;
-  const source = document.querySelector<HTMLElement>('[data-creation-source]')?.getBoundingClientRect();
-  const sourceX = source ? source.left + source.width / 2 : plan.mobile ? 40 : 58;
-  const sourceY = source ? source.top + source.height / 2 : innerHeight - (plan.mobile ? 106 : 130);
-  const scene = plan.scene.getBoundingClientRect(), documentTop = scene.top + scrollY;
-  const maxScroll = Math.max(0, document.documentElement.scrollHeight - innerHeight);
-  const start = plan.trigger?.start ?? Math.min(maxScroll, Math.max(0, documentTop - innerHeight * 0.95));
-  const end = plan.trigger?.end ?? Math.min(maxScroll, Math.max(start + 1, documentTop - innerHeight * 0.2));
+  const source = getCreationSourcePoint(plan.scene);
+  if (live || plan.intro) return source;
+  const scene = getMotionRect(plan.scene), view = getMotionViewport(), documentTop = scene.top + view.scrollY;
+  const maxScroll = getMotionScrollLimit();
+  const start = plan.trigger?.start ?? Math.min(maxScroll, Math.max(0, documentTop - view.height * 0.95));
+  const end = plan.trigger?.end ?? Math.min(maxScroll, Math.max(start + 1, documentTop - view.height * 0.2));
   // Future scenes are measured before they are on screen. Predict the scroll
   // position at this emission, rather than accidentally using mount-time scroll.
-  const birthScroll = live || plan.intro ? scrollY : start + (end - start) * Math.min(1, Math.max(0, at / sceneUnits));
-  return { x: sourceX - scene.left - plan.scene.clientLeft, y: sourceY + birthScroll - documentTop - plan.scene.clientTop };
+  const birthScroll = start + (end - start) * Math.min(1, Math.max(0, at / sceneUnits));
+  return { x: source.x, y: source.y + birthScroll - view.scrollY };
 }
 function sourceMotion(plan: ScenePlan, target: TargetPlan, at: number): Motion {
   const source = sourcePoint(plan, at);
@@ -172,14 +181,44 @@ function draggedPoint(plan: ScenePlan, target: TargetPlan, at: number, progress:
   return { x: target.box.x + target.box.width / 2 + motion.x * (1 - progress) + localX * Math.cos(angle) - localY * Math.sin(angle), y: target.box.y + target.box.height / 2 + motion.y * (1 - progress) + localX * Math.sin(angle) + localY * Math.cos(angle) };
 }
 function point(target: TargetPlan, x = 0.5, y = 0.5): Point { return { x: target.box.x + target.box.width * x, y: target.box.y + target.box.height * y }; }
-function optionPoint(plan: ScenePlan, kind: ToolKind, choice: string): Point {
-  const panel = plan.panels[kind], option = panel.querySelector<HTMLElement>(`[data-choice="${choice}"]`);
-  const scene = plan.scene.getBoundingClientRect(), rect = (option ?? panel).getBoundingClientRect();
+function optionPoint(plan: ScenePlan, option: HTMLElement): Point {
+  const scene = getMotionRect(plan.scene), rect = getMotionRect(option);
   return { x: rect.left - scene.left + rect.width * 0.55, y: rect.top - scene.top + rect.height * 0.55 };
 }
 function animateScene(plan: ScenePlan, mobile: boolean) {
   const timeline = gsap.timeline({ paused: true }); plan.timeline = timeline;
   const [mia, noah, leo, ava, eli, you, finn, iris, sam, zoe, remy, kai] = plan.cursors;
+  const cursorControls = new Map<HTMLElement, CursorControl>();
+  const cursorControl = (cursor: HTMLElement) => {
+    let control = cursorControls.get(cursor);
+    if (!control) {
+      const writeX = gsap.quickSetter(cursor, 'x', 'px'), writeY = gsap.quickSetter(cursor, 'y', 'px'), writeScale = gsap.quickSetter(cursor, 'scale');
+      const state: CursorControl = {
+        x: 0, y: 0, edge: '', vertical: '',
+        setX: (value: number) => { state.x = value; writeX(value); },
+        setY: (value: number) => { state.y = value; writeY(value); },
+        setScale: (value: number) => writeScale(value),
+        flush: () => { writeX(state.x); writeY(state.y); },
+      };
+      control = state;
+      cursorControls.set(cursor, state);
+    }
+    return control;
+  };
+  const panelEntries = Object.entries(plan.panels) as [ToolKind, HTMLDivElement][];
+  const panelRects = new Map<HTMLElement, DOMRect>();
+  const options = new Map<string, HTMLElement>();
+  const panelOptions = new Map<HTMLElement, HTMLElement[]>();
+  panelEntries.forEach(([kind, node]) => {
+    const entries = Array.from(node.querySelectorAll<HTMLElement>('[data-choice]'));
+    panelOptions.set(node, entries);
+    entries.forEach(option => options.set(`${kind}:${option.dataset.choice}`, option));
+  });
+  const optionPosition = (kind: ToolKind, choice: string) => optionPoint(plan, options.get(`${kind}:${choice}`) ?? plan.panels[kind]);
+  const invalidatePanel = (node: HTMLElement) => {
+    invalidateMotionFrame(node);
+    panelOptions.get(node)?.forEach(option => invalidateMotionFrame(option));
+  };
   const first = plan.targets[0], component = plan.targets.find(({ kind }) => kind === 'art' || kind === 'card') ?? first;
   const alignTarget = plan.targets.find(({ kind }) => kind === 'card') ?? component;
   const captureOrigin = (at: number) => timeline.call(() => {
@@ -189,13 +228,14 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   const curve = (cursor: HTMLElement, destination: () => Point, start: number, duration: number, mode: 'travel' | 'birth' | 'return' = 'travel', side = 1) => {
     const progress = { value: 0 };
     let origin: Point | undefined;
-    const setX = gsap.quickSetter(cursor, 'x', 'px'), setY = gsap.quickSetter(cursor, 'y', 'px'), setScale = gsap.quickSetter(cursor, 'scale');
+    const control = cursorControl(cursor), setX = control.setX, setY = control.setY, setScale = control.setScale;
     timeline.call(() => {
       if (mode === 'birth') {
         origin = sourcePoint(plan, start, true);
-        gsap.set(cursor, { x: origin.x, y: origin.y, scale: 0.15, autoAlpha: 1 });
+        setX(origin.x); setY(origin.y);
+        gsap.set(cursor, { scale: 0.15, autoAlpha: 1 });
       } else if (!origin || plan.trigger?.direction !== -1) {
-        origin = { x: Number(gsap.getProperty(cursor, 'x')), y: Number(gsap.getProperty(cursor, 'y')) };
+        origin = { x: control.x, y: control.y };
       }
     }, [], start);
     timeline.fromTo(progress, { value: 0 }, { value: 1, duration, ease: 'power1.inOut', immediateRender: false, onUpdate: () => {
@@ -218,9 +258,13 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   const menuAnchors = new Map<ToolKind, Point>();
   const placePanel = (kind: ToolKind, capture = false) => {
     const node = plan.panels[kind], owner = menuOwners[kind];
-    if (capture || !menuAnchors.has(kind)) menuAnchors.set(kind, { x: Number(gsap.getProperty(owner, 'x')), y: Number(gsap.getProperty(owner, 'y')) });
+    if (capture || !menuAnchors.has(kind)) {
+      const control = cursorControl(owner);
+      menuAnchors.set(kind, { x: control.x, y: control.y });
+    }
     const chosen = constructionMenuPosition(node, plan.scene, menuAnchors.get(kind)!);
     Object.assign(node.style, { left: `${chosen.x}px`, top: `${chosen.y}px` });
+    invalidatePanel(node);
   };
   const menuClose = (node: HTMLElement) => { node.dataset.open = 'false'; node.classList.add('assembly-inspector-blocked'); releaseConstructionMenu(node); };
   const panel = (kind: ToolKind, start: number, end: number) => {
@@ -256,8 +300,8 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   };
   const trackPair = (lead: HTMLElement, helper: HTMLElement, target: TargetPlan, at: number, duration: number, x1 = 0, y1 = 0, x2 = 1, y2 = 1, ease = 'power2.inOut') => {
     const progress = { value: 0 };
-    const lx = gsap.quickSetter(lead, 'x', 'px'), ly = gsap.quickSetter(lead, 'y', 'px');
-    const hx = gsap.quickSetter(helper, 'x', 'px'), hy = gsap.quickSetter(helper, 'y', 'px');
+    const leadControl = cursorControl(lead), helperControl = cursorControl(helper);
+    const lx = leadControl.setX, ly = leadControl.setY, hx = helperControl.setX, hy = helperControl.setY;
     timeline.fromTo(progress, { value: 0 }, { value: 1, duration, ease, immediateRender: false, onUpdate: () => {
       const a = draggedPoint(plan, target, at, progress.value, x1, y1), b = draggedPoint(plan, target, at, progress.value, x2, y2);
       lx(a.x); ly(a.y); hx(b.x); hy(b.y);
@@ -265,7 +309,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   };
   const selectedOptions = new Map<ToolKind, HTMLElement>();
   const choose = (kind: ToolKind, choice: string, start: number) => {
-    const option = plan.panels[kind].querySelector<HTMLElement>(`[data-choice="${choice}"]`);
+    const option = options.get(`${kind}:${choice}`);
     if (!option) return;
     const previous = selectedOptions.get(kind);
     if (previous && previous !== option) timeline.set(previous, { attr: { 'data-selected': 'false' }, backgroundColor: 'rgba(168,201,154,0)', boxShadow: 'inset 0 0 0 1px rgba(168,201,154,0)' }, start);
@@ -279,7 +323,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     timeline.to(owner, { scale: 0.86, duration: 0.045, yoyo: true, repeat: 1 }, open - 0.09);
     panel(kind, open, close);
     choices.forEach(({ choice, at }) => {
-      move(owner, () => optionPoint(plan, kind, choice), at - 0.14, 0.14);
+      move(owner, () => optionPosition(kind, choice), at - 0.14, 0.14);
       choose(kind, choice, at);
     });
   };
@@ -354,24 +398,40 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   timeline.fromTo(plan.textGuide, { scaleX: 0.85 }, { scaleX: 1, transformOrigin: 'left center', duration: 0.45, immediateRender: false }, 3.23);
   move(iris, () => point(plan.fontTarget, 1, 0), 3.23, 0.45);
   timeline.to(plan.textGuide, { autoAlpha: 0, duration: 0.2 }, 4.0);
-  depart(noah, () => optionPoint(plan, 'font', fontChoice), 4.5);
+  depart(noah, () => optionPosition('font', fontChoice), 4.5);
   depart(iris, () => point(plan.fontTarget, 1, 0), 3.9);
 
   // Leo types into an isolated decorative ghost. React's semantic text is untouched.
   const copyStart = 1.98, copyEnd = 3.2;
+  let typedCount = -1;
+  let caretPoint: Point | undefined;
+  const invalidateCaret = () => { caretPoint = undefined; invalidateMotionFrame(plan.caret); };
+  plan.invalidateCaret = invalidateCaret;
   approach(leo, () => ({ x: plan.copyBox.x + 3, y: plan.copyBox.y + 8 }), copyStart - 0.26);
   approach(sam, () => ({ x: plan.copyBox.x + plan.copyBox.width, y: plan.copyBox.y + plan.copyBox.height }), copyStart - 0.26, true);
   captureOrigin(copyStart - 0.22);
   timeline.fromTo(plan.ghost, { autoAlpha: 0, x: () => sourcePoint(plan, copyStart - 0.22).x - plan.copyBox.x - plan.copyBox.width / 2, y: () => sourcePoint(plan, copyStart - 0.22).y - plan.copyBox.y - plan.copyBox.height / 2, scale: 0.025 }, { autoAlpha: 1, x: 0, y: 0, scale: 1, duration: 0.22, ease: 'power2.out', immediateRender: false }, copyStart - 0.22);
   timeline.fromTo(plan.caret, { opacity: 0.35 }, { opacity: 1, duration: 0.17, repeat: 9, yoyo: true, ease: 'steps(1)' }, copyStart);
   timeline.set(plan.ghost, { fontFamily: 'IBM Plex Mono, monospace' }, 1.85);
+  timeline.call(invalidateCaret, [], 1.85);
   timeline.set(plan.ghost, { fontFamily: () => plan.fontFamily }, 2.95);
+  timeline.call(invalidateCaret, [], 2.95);
   const typing = { count: 0 };
-  const setCopyX = gsap.quickSetter(leo, 'x', 'px'), setCopyY = gsap.quickSetter(leo, 'y', 'px');
+  const copyControl = cursorControl(leo), setCopyX = copyControl.setX, setCopyY = copyControl.setY;
   timeline.fromTo(typing, { count: 0 }, { count: plan.copy.length, duration: copyEnd - copyStart, ease: `steps(${Math.max(1, plan.copy.length)})`, onUpdate: () => {
-    plan.typingContent.textContent = plan.copy.slice(0, Math.round(typing.count));
-    const caret = plan.caret.getBoundingClientRect(), scene = plan.scene.getBoundingClientRect();
-    setCopyX(Math.min(plan.scene.clientWidth - 56, caret.left - scene.left + 7)); setCopyY(caret.top - scene.top + 10);
+    const count = Math.round(typing.count);
+    if (count !== typedCount) {
+      typedCount = count;
+      plan.typingContent.textContent = plan.copy.slice(0, count);
+      caretPoint = undefined;
+    }
+    if (!caretPoint) {
+      // Real glyph wrapping remains the authority. Read only after a changed
+      // character/font/layout, then retain its scene-local position while scrolling.
+      const caret = getMotionRect(plan.caret, true), scene = getMotionRect(plan.scene);
+      caretPoint = { x: Math.min(plan.scene.clientWidth - 56, caret.left - scene.left + 7), y: caret.top - scene.top + 10 };
+    }
+    setCopyX(caretPoint.x); setCopyY(caretPoint.y);
   } }, copyStart);
   timeline.to(plan.ghost, { autoAlpha: 0, duration: 0.18 }, copyEnd + 0.12);
   move(sam, () => ({ x: plan.copyBox.x + 8, y: plan.copyBox.y + plan.copyBox.height }), copyStart + 0.1, copyEnd - copyStart - 0.1);
@@ -398,7 +458,11 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     const at = isCopy ? copyEnd : componentStart + index * stagger;
     const duration = isCopy ? 0.22 : reveal ? 0.8 : 1.13;
     const authoredLeaf = /^(H[1-3]|P|SPAN|IMG|SVG|CANVAS)$/i.test(target.target.tagName) && target.target !== plan.copyLeaf;
-    gsap.set(target.target, { transformOrigin: '50% 50%', opacity: 0, willChange: 'transform, opacity' });
+    gsap.set(target.target, { transformOrigin: '50% 50%', opacity: 0 });
+    if (!authoredLeaf) {
+      timeline.set(target.target, { willChange: 'transform, opacity' }, Math.max(0, at - 0.12));
+      timeline.set(target.target, { willChange: 'auto' }, at + duration + 0.15);
+    }
     captureOrigin(at);
     // Bare semantic targets are written/placed by their own leaf worker later;
     // only their empty frame participates in the earlier container handoff.
@@ -413,7 +477,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
       plan.cursors.push(maker);
       approach(maker, () => draggedPoint(plan, target, at, 0, 1, 1), at - 0.24);
       const grip = { progress: 0 };
-      const setX = gsap.quickSetter(maker, 'x', 'px'), setY = gsap.quickSetter(maker, 'y', 'px');
+      const control = cursorControl(maker), setX = control.setX, setY = control.setY;
       timeline.fromTo(grip, { progress: 0 }, { progress: 1, duration, ease: 'power2.inOut', immediateRender: false, onUpdate: () => {
         const corner = draggedPoint(plan, target, at, grip.progress, 1, 1);
         setX(corner.x); setY(corner.y);
@@ -452,7 +516,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   move(zoe, () => point(component, 0, 0), colorStart + 0.2, 0.55);
   timeline.fromTo(plan.contrast, { autoAlpha: 0, y: 5 }, { autoAlpha: 1, y: 0, duration: 0.18 }, colorStart + 0.75);
   timeline.to(plan.contrast, { autoAlpha: 0, duration: 0.18 }, 5.8);
-  depart(ava, () => optionPoint(plan, 'color', colorChoice), 5.25);
+  depart(ava, () => optionPosition('color', colorChoice), 5.25);
   depart(zoe, () => point(component, 0, 0), 5.8);
 
   // Eli finishes with visible alignment axes, a measured gap, and a small snap.
@@ -467,7 +531,10 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   approach(remy, () => point(alignTarget, 1, 1), 6.55, true);
   const snapAt = 6.9, snap = mobile ? 5 : 10;
   timeline.fromTo([alignTarget.target, alignTarget.shell], { x: snap }, { x: 0, duration: 0.35, ease: 'power2.out', immediateRender: false }, snapAt);
-  [eli, remy].forEach((cursor, index) => timeline.fromTo(cursor, { x: () => point(alignTarget, index, index).x + snap, y: () => point(alignTarget, index, index).y }, { x: () => point(alignTarget, index, index).x, duration: 0.35, ease: 'power2.out', immediateRender: false }, snapAt));
+  [eli, remy].forEach((cursor, index) => {
+    const control = cursorControl(cursor);
+    timeline.fromTo(control, { x: () => point(alignTarget, index, index).x + snap, y: () => point(alignTarget, index, index).y }, { x: () => point(alignTarget, index, index).x, duration: 0.35, ease: 'power2.out', immediateRender: false, onUpdate: control.flush }, snapAt);
+  });
   timeline.to(plan.guides, { autoAlpha: 0, duration: 0.2 }, 7.35);
   timeline.to(plan.grid, { autoAlpha: 0, duration: 0.2 }, 7.35);
   timeline.to(plan.sectionOutline, { autoAlpha: 0, duration: 0.2 }, 5.35);
@@ -487,21 +554,27 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
   timeline.eventCallback('onUpdate', () => {
     if (plan.intro) plan.onIntroProgress?.(timeline.progress());
     // Keep action pills on the canvas side of the pointer on a narrow viewport.
-    const host = plan.scene.getBoundingClientRect();
-    plan.cursors.forEach(cursor => {
-      const x = Number(gsap.getProperty(cursor, 'x')), y = Number(gsap.getProperty(cursor, 'y'));
-      cursor.dataset.edge = host.left + x > innerWidth - 145 ? 'right' : 'left';
-      cursor.dataset.vertical = host.top + y > innerHeight - 78 ? 'above' : 'below';
+    const host = getMotionRect(plan.scene), view = getMotionViewport();
+    // Collect geometry before data-attribute or clamp writes can dirty style.
+    panelEntries.forEach(([, node]) => {
+      if (node.dataset.open === 'true') panelRects.set(node, getMotionRect(node));
+    });
+    cursorControls.forEach((control, cursor) => {
+      const edge = host.left + control.x > view.width - 145 ? 'right' : 'left';
+      const vertical = host.top + control.y > view.height - 78 ? 'above' : 'below';
+      if (edge !== control.edge) { control.edge = edge; cursor.dataset.edge = edge; }
+      if (vertical !== control.vertical) { control.vertical = vertical; cursor.dataset.vertical = vertical; }
     });
     // Keep an opened inspector locked to its work point, correcting only when
     // the moving camera would otherwise carry it outside the viewport.
-    Object.values(plan.panels).forEach(node => {
+    panelEntries.forEach(([, node]) => {
       if (node.dataset.open !== 'true') return;
-      const rect = node.getBoundingClientRect();
-      const dx = Math.max(8, Math.min(innerWidth - rect.width - 8, rect.left)) - rect.left;
-      const dy = Math.max(10, Math.min(innerHeight - rect.height - (mobile ? 83 : 20), rect.top)) - rect.top;
+      const rect = panelRects.get(node)!;
+      const dx = Math.max(8, Math.min(view.width - rect.width - 8, rect.left)) - rect.left;
+      const dy = Math.max(10, Math.min(view.height - rect.height - (mobile ? 83 : 20), rect.top)) - rect.top;
       if (dx) node.style.left = `${parseFloat(node.style.left) + dx}px`;
       if (dy) node.style.top = `${parseFloat(node.style.top) + dy}px`;
+      if (dx || dy) invalidatePanel(node);
     });
   });
   if (plan.intro) {
@@ -523,9 +596,11 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
     if (!element) return;
     const allTargets = Array.from(element.querySelectorAll<HTMLElement>('[data-assemble]'));
     makeReadable(allTargets);
+    invalidateMotionFrame();
     if (!enabled) return;
 
     gsap.registerPlugin(ScrollTrigger);
+    const releaseMotionFrame = retainMotionFrame();
     const media = gsap.matchMedia();
     let disposed = false;
     let playbackPaused = element.dataset.playback === 'paused';
@@ -533,6 +608,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
     let introProgress = 0;
     const context = gsap.context(() => {
       media.add({ mobile: '(max-width: 767px)', desktop: '(min-width: 768px)', reduce: '(prefers-reduced-motion: reduce)' }, (mediaContext) => {
+        invalidateMotionFrame();
         if (mediaContext.conditions?.reduce) {
           makeReadable(allTargets);
           return;
@@ -643,6 +719,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
             constructionCleanup?.();
             overlay.remove();
           });
+          invalidateMotionFrame();
         };
       });
     }, element);
@@ -652,6 +729,8 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
       media.revert();
       context.revert();
       makeReadable(allTargets);
+      invalidateMotionFrame();
+      releaseMotionFrame();
     };
   }, [root, enabled, replayKey]);
 }

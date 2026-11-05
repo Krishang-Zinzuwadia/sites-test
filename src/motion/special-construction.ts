@@ -2,6 +2,7 @@ import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { collaborators, createCursor, type Collaborator } from './design-tools'
 import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement'
+import { getMotionRect, getCreationSourcePoint, invalidateMotionFrame } from './motion-frame'
 import './special-construction.css'
 
 type SpecialConstructionOptions = {
@@ -14,15 +15,20 @@ type SpecialConstructionOptions = {
 
 type Point = { x: number; y: number }
 type Box = Point & { width: number; height: number }
-type Worker = { actor: Collaborator; cursor: HTMLDivElement; last?: () => Point; finish: number }
+type Worker = {
+  actor: Collaborator; cursor: HTMLDivElement; last?: () => Point; finish: number
+  action: HTMLElement | null; setX: (value: number) => void; setY: (value: number) => void
+  x: number; y: number; label: string; edge: string; vertical: string
+}
 type Tile = {
   node: HTMLElement; icon: HTMLElement; name: HTMLElement; dot: HTMLElement | null
   box: Box; iconBox: Box; nameBox: Box; fill: string; border: string; radius: number
   outline: SVGRectElement; ghost: HTMLDivElement; copy: HTMLSpanElement; caret: HTMLSpanElement
   menu: HTMLDivElement; paste: HTMLDivElement; pulse: HTMLDivElement; menuBox?: Box
   worker: Worker; text: string
+  typedCount: number; caretPositions: Map<number, Point>
 }
-type Cell = { node: HTMLElement; index: number; box: Box; fill: string; opacity: number; outline: SVGRectElement }
+type Cell = { node: HTMLElement; index: number; box: Box; fill: string; opacity: number; outline: SVGRectElement; dragWidth: number; dragHeight: number; dragRadius: number }
 
 const svgNamespace = 'http://www.w3.org/2000/svg'
 const blankBox = (): Box => ({ x: 0, y: 0, width: 1, height: 1 })
@@ -60,18 +66,10 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     drawing.append(node)
     return node
   }
-  const relative = (rect: DOMRect): Box => {
-    const host = scene.getBoundingClientRect()
+  const relative = (rect: DOMRect, host = getMotionRect(scene)): Box => {
     return { x: rect.left - host.left - scene.clientLeft + scene.scrollLeft, y: rect.top - host.top - scene.clientTop + scene.scrollTop, width: rect.width, height: rect.height }
   }
-  const liveSource = (): Point => {
-    const source = document.querySelector<HTMLElement>('[data-creation-source]')?.getBoundingClientRect()
-    const host = scene.getBoundingClientRect()
-    return {
-      x: (source ? source.left + source.width / 2 : 45) - host.left - scene.clientLeft + scene.scrollLeft,
-      y: (source ? source.top + source.height / 2 : innerHeight - 115) - host.top - scene.clientTop + scene.scrollTop,
-    }
-  }
+  const liveSource = (): Point => getCreationSourcePoint(scene)
   const place = (node: HTMLElement, box: Box) => Object.assign(node.style, { left: `${box.x}px`, top: `${box.y}px`, width: `${box.width}px`, height: `${box.height}px` })
   const placeRect = (node: SVGRectElement, box: Box, radius: number) => {
     node.setAttribute('x', String(box.x + .5))
@@ -80,9 +78,23 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     node.setAttribute('height', String(Math.max(.5, box.height - 1)))
     node.setAttribute('rx', String(radius))
   }
+  const outlineGeometry = new WeakMap<SVGRectElement, { length: number; start: Point; end: Point; progress: number; point: Point }>()
+  const cacheOutline = (outline: SVGRectElement) => {
+    const length = outline.getTotalLength()
+    const start = outline.getPointAtLength(0), end = outline.getPointAtLength(length)
+    outlineGeometry.set(outline, { length, start: { x: start.x, y: start.y }, end: { x: end.x, y: end.y }, progress: 0, point: { x: start.x, y: start.y } })
+  }
   const pointOn = (outline: SVGRectElement, progress: number): Point => {
-    const point = outline.getPointAtLength(outline.getTotalLength() * Math.min(1, Math.max(0, progress)))
-    return { x: point.x, y: point.y }
+    const geometry = outlineGeometry.get(outline)!
+    const value = Math.min(1, Math.max(0, progress))
+    if (value === 0) return geometry.start
+    if (value === 1) return geometry.end
+    if (value !== geometry.progress) {
+      const point = outline.getPointAtLength(geometry.length * value)
+      geometry.point = { x: point.x, y: point.y }
+      geometry.progress = value
+    }
+    return geometry.point
   }
   const worker = (name: string, model: string, painter = false): Worker => {
     const original = collaborators.find(actor => actor.name === model) ?? collaborators[0]
@@ -92,16 +104,23 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     if (painter) cursor.classList.add('special-builder-painter')
     layer.append(cursor)
     gsap.set(cursor, { autoAlpha: 0 })
-    return { actor, cursor, finish: start }
+    return {
+      actor, cursor, finish: start, action: cursor.querySelector<HTMLElement>('.assembly-cursor-action'),
+      setX: gsap.quickSetter(cursor, 'x', 'px') as (value: number) => void,
+      setY: gsap.quickSetter(cursor, 'y', 'px') as (value: number) => void,
+      x: NaN, y: NaN, label: '', edge: '', vertical: '',
+    }
   }
   const setCursor = (person: Worker, point: Point, action: string) => {
     if (disposed) return
-    gsap.set(person.cursor, { x: point.x, y: point.y })
-    const label = person.cursor.querySelector<HTMLElement>('.assembly-cursor-action')
-    if (label && label.textContent !== action) label.textContent = action
-    const host = scene.getBoundingClientRect()
-    person.cursor.dataset.edge = host.left + point.x > innerWidth - 145 ? 'right' : 'left'
-    person.cursor.dataset.vertical = host.top + point.y > innerHeight - 75 ? 'above' : 'below'
+    const host = getMotionRect(scene)
+    if (person.x !== point.x) { person.setX(point.x); person.x = point.x }
+    if (person.y !== point.y) { person.setY(point.y); person.y = point.y }
+    if (person.label !== action) { if (person.action) person.action.textContent = action; person.label = action }
+    const edge = host.left + point.x > innerWidth - 145 ? 'right' : 'left'
+    const vertical = host.top + point.y > innerHeight - 75 ? 'above' : 'below'
+    if (person.edge !== edge) { person.cursor.dataset.edge = edge; person.edge = edge }
+    if (person.vertical !== vertical) { person.cursor.dataset.vertical = vertical; person.vertical = vertical }
   }
   // Known endpoints, rather than cached current positions, make reverse scrubbing repeatable.
   const travel = (person: Worker, from: () => Point, to: () => Point, at: number, duration: number, action: string) => {
@@ -120,7 +139,7 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
   }
   const arrive = (person: Worker, to: () => Point, at: number, duration: number, action: string) => {
     if (!person.last) {
-      timeline.set(person.cursor, { x: () => liveSource().x, y: () => liveSource().y }, at)
+      timeline.call(() => setCursor(person, liveSource(), action), [], at)
       timeline.fromTo(person.cursor, { autoAlpha: 0, scale: .18 }, { autoAlpha: 1, scale: 1, duration: .035, immediateRender: false }, at)
       travel(person, liveSource, to, at + .035, Math.max(.02, duration - .035), action)
     } else travel(person, person.last, to, at, duration, action)
@@ -137,7 +156,8 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     timeline.fromTo(progress, { value: 0 }, {
       value: 1, duration, ease: 'none', immediateRender: false,
       onUpdate: () => {
-        outline.style.strokeDashoffset = String(1 - progress.value)
+        const offset = String(1 - progress.value)
+        if (outline.style.strokeDashoffset !== offset) outline.style.strokeDashoffset = offset
         setCursor(person, pointOn(outline, progress.value), action)
       },
     }, at)
@@ -166,11 +186,11 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     menu.innerHTML = '<div class="special-builder-menu-heading">CLIPBOARD</div><div class="special-builder-menu-row is-muted"><span>Cut</span><kbd>⌘ X</kbd></div><div class="special-builder-menu-row is-muted"><span>Copy</span><kbd>⌘ C</kbd></div><div class="special-builder-menu-row is-paste"><span>↳ &nbsp;Paste</span><kbd>⌘ V</kbd></div>'
     const click = make('special-builder-click-pulse')
     click.style.setProperty('--special-color', person.actor.color)
-    return [{ node, icon, name, dot: node.querySelector<HTMLElement>('[data-tech-dot]'), box: blankBox(), iconBox: blankBox(), nameBox: blankBox(), fill: style.backgroundColor, border: style.borderTopColor, radius: parseFloat(style.borderTopLeftRadius) || 6, outline: rect(person.actor.color), ghost, copy, caret, menu, paste: menu.querySelector<HTMLDivElement>('.is-paste')!, pulse: click, worker: person, text: name.textContent ?? '' }]
+    return [{ node, icon, name, dot: node.querySelector<HTMLElement>('[data-tech-dot]'), box: blankBox(), iconBox: blankBox(), nameBox: blankBox(), fill: style.backgroundColor, border: style.borderTopColor, radius: parseFloat(style.borderTopLeftRadius) || 6, outline: rect(person.actor.color), ghost, copy, caret, menu, paste: menu.querySelector<HTMLDivElement>('.is-paste')!, pulse: click, worker: person, text: name.textContent ?? '', typedCount: -1, caretPositions: new Map<number, Point>() }]
   })
   const cells: Cell[] = grids.flatMap(grid => Array.from(grid.querySelectorAll<HTMLElement>('[data-build-cell]')).map(node => {
     const style = getComputedStyle(node)
-    return { node, index: Number(node.dataset.buildCell), box: blankBox(), fill: style.backgroundColor, opacity: Number(style.opacity), outline: rect('#a8c99a') }
+    return { node, index: Number(node.dataset.buildCell), box: blankBox(), fill: style.backgroundColor, opacity: Number(style.opacity), outline: rect('#a8c99a'), dragWidth: NaN, dragHeight: NaN, dragRadius: NaN }
   }))
 
   const measure = () => {
@@ -183,19 +203,37 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     const saved = Array.from(ancestors, node => ({ node, value: node.style.getPropertyValue('transform'), priority: node.style.getPropertyPriority('transform') }))
     saved.forEach(({ node }) => node.style.setProperty('transform', 'none', 'important'))
     try {
-      tiles.forEach(tile => {
-        tile.box = relative(tile.node.getBoundingClientRect())
-        tile.iconBox = relative(tile.icon.getBoundingClientRect())
-        tile.nameBox = relative(tile.name.getBoundingClientRect())
+      const host = scene.getBoundingClientRect()
+      const typographyProperties = ['font-family', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'color']
+      const tileMeasurements = tiles.map(tile => {
+        const typography = getComputedStyle(tile.name)
+        return {
+          tile, box: relative(tile.node.getBoundingClientRect(), host),
+          iconBox: relative(tile.icon.getBoundingClientRect(), host), nameBox: relative(tile.name.getBoundingClientRect(), host),
+          typography: typographyProperties.map(property => typography.getPropertyValue(property)),
+        }
+      })
+      const cellMeasurements = cells.map(cell => ({ cell, box: relative(cell.node.getBoundingClientRect(), host) }))
+      // Read the entire natural layout before writing any overlay geometry.
+      tileMeasurements.forEach(({ tile, box, iconBox, nameBox, typography }) => {
+        tile.box = box
+        tile.iconBox = iconBox
+        tile.nameBox = nameBox
         placeRect(tile.outline, tile.box, tile.radius)
         place(tile.ghost, tile.nameBox)
-        const typography = getComputedStyle(tile.name)
-        for (const property of ['font-family', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'color']) tile.ghost.style.setProperty(property, typography.getPropertyValue(property))
+        typographyProperties.forEach((property, index) => tile.ghost.style.setProperty(property, typography[index]))
         tile.menuBox = undefined
+        tile.caretPositions.clear()
       })
-      cells.forEach(cell => { cell.box = relative(cell.node.getBoundingClientRect()); placeRect(cell.outline, cell.box, 1) })
+      cellMeasurements.forEach(({ cell, box }) => {
+        cell.box = box
+        placeRect(cell.outline, cell.box, 1)
+        cell.dragWidth = cell.box.width - 1; cell.dragHeight = cell.box.height - 1; cell.dragRadius = 1
+      })
+      tiles.forEach(tile => cacheOutline(tile.outline))
     } finally {
       saved.forEach(({ node, value, priority }) => value ? node.style.setProperty('transform', value, priority) : node.style.removeProperty('transform'))
+      invalidateMotionFrame()
     }
   }
   measure()
@@ -247,9 +285,15 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
     timeline.fromTo(writing, { value: 0 }, {
       value: 1, duration: .12, ease: `steps(${Math.max(1, tile.text.length)})`, immediateRender: false,
       onUpdate: () => {
-        tile.copy.textContent = tile.text.slice(0, Math.round(tile.text.length * writing.value))
-        const caret = relative(tile.caret.getBoundingClientRect())
-        setCursor(person, { x: caret.x, y: caret.y + caret.height * .7 }, `Type ${tile.text}`)
+        const count = Math.round(tile.text.length * writing.value)
+        if (tile.typedCount !== count) { tile.copy.textContent = tile.text.slice(0, count); tile.typedCount = count }
+        let point = tile.caretPositions.get(count)
+        if (!point) {
+          const caret = relative(tile.caret.getBoundingClientRect())
+          point = { x: caret.x, y: caret.y + caret.height * .7 }
+          tile.caretPositions.set(count, point)
+        }
+        setCursor(person, point, `Type ${tile.text}`)
       },
     }, at + .27)
     timeline.fromTo(tile.name, { opacity: 0 }, { opacity: 1, duration: .001, immediateRender: false }, at + .39)
@@ -332,11 +376,10 @@ export function addSpecialConstruction({ scene, overlay, timeline, start = 4.05,
               const draggedHeight = (cell.box.height - 1) * dragging.value
               const width = Math.max(.5, draggedWidth)
               const height = Math.max(.5, draggedHeight)
-              cell.outline.setAttribute('x', String(cell.box.x + .5))
-              cell.outline.setAttribute('y', String(cell.box.y + .5))
-              cell.outline.setAttribute('width', String(width))
-              cell.outline.setAttribute('height', String(height))
-              cell.outline.setAttribute('rx', String(Math.min(1, width / 2, height / 2)))
+              const radius = Math.min(1, width / 2, height / 2)
+              if (cell.dragWidth !== width) { cell.outline.setAttribute('width', String(width)); cell.dragWidth = width }
+              if (cell.dragHeight !== height) { cell.outline.setAttribute('height', String(height)); cell.dragHeight = height }
+              if (cell.dragRadius !== radius) { cell.outline.setAttribute('rx', String(radius)); cell.dragRadius = radius }
               setCursor(builder, { x: cell.box.x + .5 + draggedWidth, y: cell.box.y + .5 + draggedHeight }, `Drag square ${number}`)
             },
           }, dragAt)

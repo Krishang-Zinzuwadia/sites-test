@@ -62,18 +62,33 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
     let position = window.scrollY
     let velocity = Math.max(90, Math.min(116, innerHeight * .12))
     const toolkit = document.getElementById('toolkit')
+    let viewportHeight = innerHeight
+    let end = 0
+    let toolkitTop = Infinity
+    let toolkitBottom = -Infinity
+    const measure = () => {
+      viewportHeight = innerHeight
+      end = Math.max(0, document.documentElement.scrollHeight - viewportHeight)
+      if (toolkit) {
+        const rect = toolkit.getBoundingClientRect()
+        toolkitTop = rect.top + window.scrollY
+        toolkitBottom = rect.bottom + window.scrollY
+      }
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(document.documentElement)
+    window.addEventListener('resize', measure)
     document.documentElement.classList.add('auto-tour-running')
     const advance = (now: number) => {
       const elapsed = previous ? Math.min((now - previous) / 1000, .05) : 0
       previous = now
-      if (document.hidden || document.querySelector('dialog[open]')) {
+      if (document.hidden) {
         frame.current = requestAnimationFrame(advance)
         return
       }
-      const end = Math.max(0, document.documentElement.scrollHeight - innerHeight)
-      const toolRect = toolkit?.getBoundingClientRect()
-      const inspectingTools = toolRect && toolRect.top < innerHeight && toolRect.bottom > innerHeight * .2
-      const desiredSpeed = inspectingTools ? 62 : Math.max(90, Math.min(116, innerHeight * .12))
+      const inspectingTools = toolkitTop - position < viewportHeight && toolkitBottom - position > viewportHeight * .2
+      const desiredSpeed = inspectingTools ? 62 : Math.max(90, Math.min(116, viewportHeight * .12))
       velocity += (desiredSpeed - velocity) * Math.min(1, elapsed * 3)
       position = Math.min(end, position + velocity * elapsed)
       window.scrollTo({ top: position, behavior: 'instant' })
@@ -87,6 +102,8 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
     frame.current = requestAnimationFrame(advance)
     return () => {
       cancelAnimationFrame(frame.current)
+      observer.disconnect()
+      window.removeEventListener('resize', measure)
       document.documentElement.classList.remove('auto-tour-running')
     }
   }, [enabled, introDone, requested, complete])

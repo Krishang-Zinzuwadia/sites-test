@@ -2,6 +2,7 @@ import { useLayoutEffect, type RefObject } from 'react'
 import gsap from 'gsap'
 import { collaborators, createCursor } from './design-tools'
 import { addElementConstruction } from './element-construction'
+import { getMotionRect, retainMotionFrame } from './motion-frame'
 
 /** Even the page furniture is unpacked from the same physical source. */
 export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: boolean, replayKey: number) {
@@ -10,6 +11,7 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
     const source = root.current.querySelector<HTMLElement>('[data-creation-source]')
     if (!source) return
     const page = root.current
+    const releaseFrame = retainMotionFrame()
     const overlay = document.createElement('div')
     overlay.className = 'assembly-overlay chrome-construction-overlay'
     overlay.setAttribute('aria-hidden', 'true')
@@ -32,13 +34,13 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
         const moveY = gsap.quickSetter(cursor, 'y', 'px')
         const point = { x: 0, y: 0 }
         const sourcePoint = () => {
-          const box = source.getBoundingClientRect()
-          const scene = page.getBoundingClientRect()
+          const box = getMotionRect(source)
+          const scene = getMotionRect(page)
           return { x: box.left + box.width / 2 - scene.left, y: box.top + box.height * .4 - scene.top }
         }
         const track = () => {
-          const rect = item.getBoundingClientRect()
-          const scene = page.getBoundingClientRect()
+          const rect = getMotionRect(item, true)
+          const scene = getMotionRect(page)
           point.x = rect.right - scene.left + 4
           point.y = rect.top - scene.top + 3
           moveX(point.x)
@@ -90,6 +92,7 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
       cleanupLeaves?.()
       context.revert()
       overlay.remove()
+      releaseFrame()
     }
   }, [root, enabled, replayKey])
 }

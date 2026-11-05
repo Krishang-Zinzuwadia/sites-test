@@ -22,6 +22,7 @@ function hashAsset(contents, filename) {
 async function collectAssets(directory = assetsDirectory) {
   const manifest = {}
   const files = []
+  const config = {}
   async function visit(current, relative = '') {
     const entries = await fs.readdir(current, { withFileTypes: true })
     entries.sort((left, right) => left.name.localeCompare(right.name))
@@ -30,6 +31,11 @@ async function collectAssets(directory = assetsDirectory) {
       const relativePath = path.join(relative, entry.name)
       if (entry.isDirectory()) await visit(filename, relativePath)
       else if (entry.isFile()) {
+        // Platform routing files are deployment metadata, never public assets.
+        if (!relative && (entry.name === '_headers' || entry.name === '_redirects')) {
+          config[entry.name] = await fs.readFile(filename, 'utf8')
+          continue
+        }
         const contents = await fs.readFile(filename)
         const assetPath = '/' + relativePath.split(path.sep).join('/')
         const hash = hashAsset(contents, relativePath)
@@ -41,7 +47,7 @@ async function collectAssets(directory = assetsDirectory) {
   }
   await visit(directory)
   if (!files.length) throw new Error('No built assets found; run npm run build:cloudflare first')
-  return { manifest, files }
+  return { manifest, files, config }
 }
 
 async function uploadAssets(input, fetchImplementation = fetch, directory = assetsDirectory) {

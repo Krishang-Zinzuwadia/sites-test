@@ -36,9 +36,17 @@ This is explicitly a **fictional concept portfolio**, not a real profile. Change
 - `src/components/creation-box.tsx`: opening sequence and persistent creation source.
 - `src/motion/use-auto-tour.ts`: independent automatic scroll camera and playback control.
 
-Google Fonts supplies Manrope, DM Sans and IBM Plex Mono; system fallbacks are configured. The site needs no backend or API key. Cursors simulate collaboration; they are not live users.
+Manrope, DM Sans and IBM Plex Mono are self-hosted as WOFF2 files, with their original weights and system fallbacks. The official SIL Open Font Licenses are included in `src/assets/fonts/`. The site needs no backend or API key. Cursors simulate collaboration; they are not live users.
 
 Source files use lowercase kebab-case names. React component and hook exports retain their normal TypeScript naming conventions.
+
+## Performance
+
+Every cursor, animation and construction step remains enabled. Motion shares scene/source geometry within each GSAP frame, reuses cursor setters, avoids unchanged text updates, and caches measured illustration paths. Natural-layout measurements and resize/font refreshes explicitly invalidate those caches. The scroll camera and percentage readout measure page bounds when layout changes rather than on every scroll frame.
+
+Fonts load from the same origin without an external stylesheet dependency. React and GSAP have separate content-hashed vendor chunks so edits to portfolio code do not invalidate those downloads. Vite preloads required modules, and `public/_headers` gives hashed `/assets/*` files a one-year immutable browser cache. HTML keeps Cloudflare's revalidation behavior. `_headers` is Cloudflare's required configuration filename.
+
+The performance pass uses source review and production build checks. Browser traces, frame-rate figures, Lighthouse scores and Core Web Vitals were not collected; no automated tests were written or run.
 
 ## Build and preview
 
@@ -67,4 +75,4 @@ npx cf deploy --prebuilt --mode production --dry-run
 
 `npm run deploy` builds and publishes the site and its configured custom domain. For CI, provide `CLOUDFLARE_API_TOKEN` through the CI secret store. Credentials, local Cloudflare output, and environment files are excluded from Git.
 
-The optional `node scripts/cloudflare-assets.cjs manifest` command describes the built assets for the [Cloudflare direct-upload API](https://developers.cloudflare.com/workers/static-assets/direct-upload/). Its `upload` mode reads one JSON object `{ "jwt": "...", "buckets": [], "accountId": "..." }` from standard input and returns JSON containing a completion `jwt` and an upload report. Capture its output securely; it contains a short-lived credential. The helper never stores credentials and does not create or deploy a Worker.
+The optional `node scripts/cloudflare-assets.cjs manifest` command describes the built assets for the [Cloudflare direct-upload API](https://developers.cloudflare.com/workers/static-assets/direct-upload/). It returns routing `config` separately from the upload manifest; pass that config into the deployment's `assets.config` metadata so `_headers` is applied rather than served as a public file. Its `upload` mode reads one JSON object `{ "jwt": "...", "buckets": [], "accountId": "..." }` from standard input and returns JSON containing a completion `jwt` and an upload report. Capture its output securely; it contains a short-lived credential. The helper never stores credentials and does not create or deploy a Worker.

@@ -8,26 +8,49 @@ import { useAutoTour } from './motion/use-auto-tour'
 import { useBoxArrival } from './motion/use-box-arrival'
 
 const MemoPortfolioSections = memo(PortfolioSections)
+const MemoHeroArt = memo(HeroArt)
+const MemoAvatarArt = memo(AvatarArt)
+const MemoStickerArt = memo(StickerArt)
+const MemoCreationBox = memo(CreationBox)
+const localTimeFormatter = new Intl.DateTimeFormat('en', { hour: '2-digit', minute: '2-digit', hour12: false })
+
+const LocalClock = memo(function LocalClock() {
+  const [time, setTime] = useState(() => new Date())
+  useEffect(() => {
+    const interval = window.setInterval(() => setTime(new Date()), 60_000)
+    return () => window.clearInterval(interval)
+  }, [])
+  return <span className="local-clock">{localTimeFormatter.format(time)} LOCAL TIME</span>
+})
 
 function ScrollReadout() {
   const [progress, setProgress] = useState(0)
   useEffect(() => {
     let tick = 0
+    let range = Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
+    let displayed = -1
     const update = () => {
       if (tick) return
       tick = requestAnimationFrame(() => {
-        const range = document.documentElement.scrollHeight - window.innerHeight
-        setProgress(range > 0 ? Math.round(window.scrollY / range * 100) : 0)
+        const next = range > 0 ? Math.round(window.scrollY / range * 100) : 0
+        if (next !== displayed) { displayed = next; setProgress(next) }
         tick = 0
       })
     }
+    const measure = () => {
+      range = Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
+      update()
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(document.documentElement)
     window.addEventListener('scroll', update, { passive: true })
-    window.addEventListener('resize', update)
+    window.addEventListener('resize', measure)
     update()
     return () => {
       cancelAnimationFrame(tick)
       window.removeEventListener('scroll', update)
-      window.removeEventListener('resize', update)
+      window.removeEventListener('resize', measure)
+      observer.disconnect()
     }
   }, [])
   return <span className="scroll-progress" aria-label={`${progress}% scrolled`}>{String(progress).padStart(2, '0')}<span>%</span></span>
@@ -40,7 +63,6 @@ function App() {
   const [replayKey, setReplayKey] = useState(0)
   const [ready, setReady] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
   const [active, setActive] = useState('about')
-  const [time, setTime] = useState(() => new Date())
   const onReady = useCallback(() => setReady(true), [])
   useAssembly(root, motion && ready, replayKey)
   useBoxArrival(root, motion && ready, replayKey)
@@ -57,14 +79,12 @@ function App() {
       setMotion(true)
     }
     media.addEventListener('change', onPreference)
-    const interval = window.setInterval(() => setTime(new Date()), 60_000)
     const observer = new IntersectionObserver(entries => {
       for (const entry of entries) if (entry.isIntersecting) setActive(entry.target.id)
     }, { rootMargin: '-12% 0px -65% 0px', threshold: 0 })
     root.current?.querySelectorAll('section[id]').forEach(section => observer.observe(section))
     return () => {
       media.removeEventListener('change', onPreference)
-      window.clearInterval(interval)
       observer.disconnect()
     }
   }, [])
@@ -95,7 +115,7 @@ function App() {
 
   return (
     <div ref={root} className="site-root" data-motion={motion ? 'on' : 'off'} data-playback={tour.status === 'paused' ? 'paused' : 'playing'} data-stage={ready || !motion ? 'unpacked' : 'loading'}>
-      <CreationBox enabled={motion} replayKey={replayKey} onReady={onReady} />
+      <MemoCreationBox enabled={motion} replayKey={replayKey} onReady={onReady} />
       <a href="#main" className="skip-link">Skip to content</a>
       <header className="site-nav" data-box-arrival>
         <span className="wordmark"><span className="brand-symbol">a<span>m</span></span><span className="wordmark-divider" />portfolio<span className="edition">/ 2026</span></span>
@@ -109,13 +129,13 @@ function App() {
         <div className="canvas-meta" id="top" data-box-arrival><span><span className="status-dot" /> OPEN TO GOOD CONVERSATIONS</span><span className="meta-right">A PERSONAL SPACE, IN PROGRESS</span></div>
         <section className="hero assembly-scene" data-intro data-scene-name="Profile" aria-labelledby="profile-name">
           <div className="hero-banner" data-assemble="art">
-            <HeroArt />
+            <MemoHeroArt />
             <div className="banner-caption"><span>A LITTLE WORLD OF MY OWN</span><span>EST. 2000 ↗</span></div>
           </div>
           <div className="identity-row" data-assemble="card">
-            <div className="profile-avatar" data-construction-atom><AvatarArt /></div>
+            <div className="profile-avatar" data-construction-atom><MemoAvatarArt /></div>
             <div className="profile-title"><div className="profile-eyebrow">DESIGNER <span>×</span> DEVELOPER</div><h1 id="profile-name">Alex Morgan<span className="name-period">.</span></h1><p>Thoughtful interfaces. A little unexpected.</p></div>
-            <div className="profile-location"><span className="location-orbit">◎</span><span>BASED ON EARTH<br /><span className="local-clock">{new Intl.DateTimeFormat('en', { hour: '2-digit', minute: '2-digit', hour12: false }).format(time)} LOCAL TIME</span></span></div>
+            <div className="profile-location"><span className="location-orbit">◎</span><span>BASED ON EARTH<br /><LocalClock /></span></div>
           </div>
           <div className="hero-footnote" data-assemble="text"><span className="tiny-cross">✳</span><span>Good work is never made alone.<br /><span className="muted">Sit back. Watch a little world come together.</span></span><ArrowDown className="scroll-arrow" size={18} /></div>
         </section>
@@ -132,8 +152,8 @@ function App() {
       </main>
 
       <aside className="margin-note" aria-hidden="true" data-box-arrival><div className="margin-line" /><span>ONE BOX. MANY HANDS.<br />A LITTLE WORLD, UNPACKED.</span><MousePointer2 className="margin-cursor" size={21} /><span className="margin-signature">a little bit of play ↘</span></aside>
-      <div className="floating-sticker sticker-flower" aria-hidden="true" data-box-arrival><StickerArt kind="flower" /></div>
-      <div className="floating-sticker sticker-cube" aria-hidden="true" data-box-arrival><StickerArt kind="cube" /></div>
+      <div className="floating-sticker sticker-flower" aria-hidden="true" data-box-arrival><MemoStickerArt kind="flower" /></div>
+      <div className="floating-sticker sticker-cube" aria-hidden="true" data-box-arrival><MemoStickerArt kind="cube" /></div>
 
       <div className="assembly-dock" role="region" aria-label="Animation controls" data-construction-exempt>
         <div className="collaborator-stack" aria-hidden="true"><span>M</span><span>N</span><span>L</span><span>A</span><span>E</span><span>Y</span><span className="team-count">+</span></div>

@@ -3,6 +3,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { collaborators, createCursor, type Collaborator } from './design-tools'
 import { addSpecialConstruction } from './special-construction'
 import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement'
+import { getMotionRect, getCreationSourcePoint, invalidateMotionFrame } from './motion-frame'
 import './element-construction.css'
 
 type ElementConstructionOptions = {
@@ -18,7 +19,11 @@ type ElementConstructionOptions = {
 type Piece = HTMLElement | SVGElement
 type Box = { x: number; y: number; width: number; height: number }
 type Point = { x: number; y: number }
-type Worker = { actor: Collaborator; cursor: HTMLDivElement; load: number; artwork: boolean; jobs: Job[] }
+type Worker = {
+  actor: Collaborator; cursor: HTMLDivElement; load: number; artwork: boolean; jobs: Job[]
+  action: HTMLElement | null; setX: (value: number) => void; setY: (value: number) => void
+  x: number; y: number; label: string; edge: string; vertical: string
+}
 type Job = {
   leaf: Piece
   kind: 'copy' | 'formatted' | 'art'
@@ -38,6 +43,8 @@ type Job = {
   menuBox?: Box
   pasted: boolean
   progress: { write: number }
+  typedCount: number
+  caretPositions: Map<number, Point>
   natural: { x: number; y: number; scaleX: number; scaleY: number }
 }
 
@@ -157,7 +164,12 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     const cursor = createCursor(actor)
     cursor.classList.add('element-builder-cursor')
     layer.append(cursor)
-    return { actor, cursor, load: 0, artwork, jobs: [] }
+    return {
+      actor, cursor, load: 0, artwork, jobs: [], action: cursor.querySelector<HTMLElement>('.assembly-cursor-action'),
+      setX: gsap.quickSetter(cursor, 'x', 'px') as (value: number) => void,
+      setY: gsap.quickSetter(cursor, 'y', 'px') as (value: number) => void,
+      x: NaN, y: NaN, label: '', edge: '', vertical: '',
+    }
   })
   const jobs: Job[] = []
   const artQueues = Array.from({ length: innerWidth < 768 ? 1 : 2 }, () => 0)
@@ -215,6 +227,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
       leaf, text, kind: art ? 'art' : formatted ? 'formatted' : 'copy', action: actionFor(leaf, art, text),
       worker, at, weight, box: { x: 0, y: 0, width: 0, height: 0 }, frame, ghost, copy, caret, menu, paste, pulse, pasted,
       progress: { write: 0 },
+      typedCount: -1, caretPositions: new Map(),
       natural: { x: numericProperty(leaf, 'x', 0), y: numericProperty(leaf, 'y', 0), scaleX: numericProperty(leaf, 'scaleX', 1), scaleY: numericProperty(leaf, 'scaleY', 1) },
     }
     jobs.push(job)
@@ -224,30 +237,28 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
   const unit = span * (hasTech ? 0.22 : 1) / Math.max(1, ...workers.map(worker => worker.load))
   let disposed = false
 
-  const relativeRect = (rect: DOMRect): Box => {
-    const host = scene.getBoundingClientRect()
+  const relativeRect = (rect: DOMRect, host = getMotionRect(scene)): Box => {
     return { x: rect.left - host.left - scene.clientLeft + scene.scrollLeft, y: rect.top - host.top - scene.clientTop + scene.scrollTop, width: rect.width, height: rect.height }
   }
+  const placedBoxes = new WeakMap<HTMLElement, Box>()
   const placeBox = (node: HTMLElement, box: Box) => {
+    const previous = placedBoxes.get(node)
+    if (previous && previous.x === box.x && previous.y === box.y && previous.width === box.width && previous.height === box.height) return
     Object.assign(node.style, { left: `${box.x}px`, top: `${box.y}px`, width: `${Math.max(1, box.width)}px`, height: `${Math.max(1, box.height)}px` })
+    placedBoxes.set(node, { ...box })
   }
-  const liveSource = (): Point => {
-    const sourceBox = document.querySelector<HTMLElement>('[data-creation-source]')?.getBoundingClientRect()
-    const host = scene.getBoundingClientRect()
-    return {
-      x: (sourceBox ? sourceBox.left + sourceBox.width / 2 : 45) - host.left - scene.clientLeft + scene.scrollLeft,
-      y: (sourceBox ? sourceBox.top + sourceBox.height / 2 : innerHeight - 115) - host.top - scene.clientTop + scene.scrollTop,
-    }
-  }
+  const liveSource = (): Point => getCreationSourcePoint(scene)
   const setCursor = (job: Job, x: number, y: number, actionText = job.action) => {
     if (disposed) return
-    const cursor = job.worker.cursor
-    gsap.set(cursor, { x, y })
-    const action = cursor.querySelector<HTMLElement>('.assembly-cursor-action')
-    if (action && action.textContent !== actionText) action.textContent = actionText
-    const host = scene.getBoundingClientRect()
-    cursor.dataset.edge = host.left + x > innerWidth - 145 ? 'right' : 'left'
-    cursor.dataset.vertical = host.top + y > innerHeight - 75 ? 'above' : 'below'
+    const host = getMotionRect(scene)
+    const worker = job.worker, cursor = worker.cursor
+    if (worker.x !== x) { worker.setX(x); worker.x = x }
+    if (worker.y !== y) { worker.setY(y); worker.y = y }
+    if (worker.label !== actionText) { if (worker.action) worker.action.textContent = actionText; worker.label = actionText }
+    const edge = host.left + x > innerWidth - 145 ? 'right' : 'left'
+    const vertical = host.top + y > innerHeight - 75 ? 'above' : 'below'
+    if (worker.edge !== edge) { cursor.dataset.edge = edge; worker.edge = edge }
+    if (worker.vertical !== vertical) { cursor.dataset.vertical = vertical; worker.vertical = vertical }
   }
   const render = (job: Job) => {
     if (disposed) return
@@ -255,21 +266,26 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     placeBox(job.frame, box)
     if (kind === 'copy' && job.copy && job.ghost) {
       const count = Math.round(job.text.length * progress.write)
-      job.copy.textContent = job.text.slice(0, count)
-      const caret = job.caret.getBoundingClientRect()
-      const point = relativeRect(caret)
-      setCursor(job, point.x + 3, point.y + Math.min(point.height, 13))
+      if (job.typedCount !== count) { job.copy.textContent = job.text.slice(0, count); job.typedCount = count }
+      let point = job.caretPositions.get(count)
+      if (!point) {
+        const caret = relativeRect(job.caret.getBoundingClientRect())
+        point = { x: caret.x + 3, y: caret.y + Math.min(caret.height, 13) }
+        job.caretPositions.set(count, point)
+      }
+      setCursor(job, point.x, point.y)
     } else if (kind === 'formatted') {
-      job.caret.style.left = `${box.width * progress.write}px`
+      const left = `${box.width * progress.write}px`
+      if (job.caret.style.left !== left) job.caret.style.left = left
       setCursor(job, box.x + box.width * progress.write, box.y + Math.min(box.height, 18))
     }
   }
-  const cursorPoint = (worker: Worker): Point => ({ x: numericProperty(worker.cursor, 'x', 0), y: numericProperty(worker.cursor, 'y', 0) })
+  const cursorPoint = (worker: Worker): Point => ({ x: Number.isFinite(worker.x) ? worker.x : 0, y: Number.isFinite(worker.y) ? worker.y : 0 })
   const anchor = (job: Job): Point => job.kind === 'art'
     ? { x: job.box.x + job.box.width / 2, y: job.box.y + job.box.height / 2 }
     : { x: job.box.x + 2, y: job.box.y + Math.min(16, job.box.height / 2) }
   const placeMenu = (job: Job, lock = false): Box => {
-    if (job.menuBox && !lock && job.menu && getComputedStyle(job.menu).visibility !== 'hidden' && Number(getComputedStyle(job.menu).opacity) > 0.01) return job.menuBox
+    if (job.menuBox && !lock && job.menu?.dataset.menuReserved === 'true') return job.menuBox
     const point = anchor(job)
     const box = job.menu ? constructionMenuPosition(job.menu, scene, point, lock) : { ...point, width: 148, height: 100 }
     job.menuBox = box
@@ -311,31 +327,44 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     const saved = measured.map(node => ({ value: node.style.getPropertyValue('transform'), priority: node.style.getPropertyPriority('transform') }))
     measured.forEach(node => node.style.setProperty('transform', 'none', 'important'))
     try {
-      jobs.forEach(job => {
-        job.box = relativeRect(job.leaf.getBoundingClientRect())
+      const host = scene.getBoundingClientRect()
+      const paddingProperties = ['padding-top', 'padding-right', 'padding-bottom', 'padding-left']
+      const measurements = jobs.map(job => {
+        const box = relativeRect(job.leaf.getBoundingClientRect(), host)
+        const type = job.ghost || job.kind === 'formatted' ? getComputedStyle(job.leaf) : undefined
+        return {
+          job, box, typography: job.ghost ? typeProperties.map(property => type!.getPropertyValue(property)) : [],
+          padding: job.ghost ? paddingProperties.map(property => type!.getPropertyValue(property)) : [],
+          borderWidth: type?.borderWidth ?? '', caretHeight: Math.min(box.height, parseFloat(type?.fontSize ?? '0') * 1.05),
+        }
+      })
+      measurements.forEach(({ job, box, typography, padding, borderWidth, caretHeight }) => {
+        job.box = box
+        job.caretPositions.clear()
         placeBox(job.frame, job.box)
         if (job.ghost) {
           placeBox(job.ghost, job.box)
-          const type = getComputedStyle(job.leaf)
-          typeProperties.forEach(property => job.ghost!.style.setProperty(property, type.getPropertyValue(property)))
+          typeProperties.forEach((property, index) => job.ghost!.style.setProperty(property, typography[index]))
           // Mirror the content box, including padded labels and buttons.
-          for (const side of ['top', 'right', 'bottom', 'left']) job.ghost.style.setProperty(`padding-${side}`, type.getPropertyValue(`padding-${side}`))
+          paddingProperties.forEach((property, index) => job.ghost!.style.setProperty(property, padding[index]))
           job.ghost.style.boxSizing = 'border-box'
-          job.ghost.style.borderWidth = type.borderWidth
+          job.ghost.style.borderWidth = borderWidth
           job.ghost.style.borderStyle = 'solid'
           job.ghost.style.borderColor = 'transparent'
         }
         if (job.kind === 'formatted') {
-          const type = getComputedStyle(job.leaf)
-          job.caret.style.height = `${Math.min(job.box.height, parseFloat(type.fontSize) * 1.05)}px`
+          job.caret.style.height = `${caretHeight}px`
         }
-        if (job.menu) placeMenu(job)
+        // Hidden menus only need a collision search when the cursor opens them.
+        // A currently reserved menu remains locked to its explicit Paste target.
+        if (job.menu?.dataset.menuReserved !== 'true') job.menuBox = undefined
       })
     } finally {
       measured.forEach((node, index) => {
         if (saved[index].value) node.style.setProperty('transform', saved[index].value, saved[index].priority)
         else node.style.removeProperty('transform')
       })
+      invalidateMotionFrame()
     }
   }
   measure()
