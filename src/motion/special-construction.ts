@@ -1,8 +1,8 @@
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { collaborators, createCursor, type Collaborator } from './DesignTools'
-import { constructionMenuPosition, releaseConstructionMenu } from './menuPlacement'
-import './specialConstruction.css'
+import { collaborators, createCursor, type Collaborator } from './design-tools'
+import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement'
+import './special-construction.css'
 
 type SpecialConstructionOptions = {
   scene: HTMLElement

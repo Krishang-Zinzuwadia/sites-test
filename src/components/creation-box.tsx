@@ -38,9 +38,6 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
     const ring = source.querySelector('.creation-box__ring')
     const echo = source.querySelector('.creation-box__echo')
     const aperture = source.querySelector('.creation-box__energy')
-    const desk = root.querySelector<HTMLElement>('.creation-workstation__desk')
-    const chair = root.querySelector<HTMLElement>('.creation-workstation__chair')
-    const builders = root.querySelectorAll<HTMLElement>('.creation-builder')
     const openLid = { x: -2, y: -23, rotation: -9 }
     const finish = () => {
       if (disposed || isReady) return
@@ -61,8 +58,6 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
       gsap.set(lid, { ...openLid, opacity: 1, transformOrigin: '50% 60%' })
       gsap.set(aperture, { opacity: .35, scale: 1 })
       gsap.set([glow, ring, echo], { opacity: 0 })
-      gsap.set([desk, chair], { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 })
-      gsap.set(builders, { opacity: 0, scale: 1 })
 
       if (!motionAllowed) {
         finish()
@@ -73,17 +68,6 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
       const introScale = window.innerWidth < 641 ? 3.4 : 2.65
       const introX = window.innerWidth / 2 - (rect.left + rect.width / 2)
       const introY = window.innerHeight * 0.48 - (rect.top + rect.height / 2)
-      const launch = { x: window.innerWidth / 2, y: window.innerHeight * .48 - 10 }
-      const home = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
-      const furniture = [desk, chair].filter((piece): piece is HTMLElement => piece !== null)
-      const furnitureTargets = furniture.map((piece) => {
-        const pieceRect = piece.getBoundingClientRect()
-        return { x: pieceRect.left + pieceRect.width / 2, y: pieceRect.top + pieceRect.height / 2 }
-      })
-      furniture.forEach((piece, i) => {
-        gsap.set(piece, { x: launch.x - furnitureTargets[i].x, y: launch.y - furnitureTargets[i].y, scale: .08, opacity: 0, rotation: i ? 12 : -10 })
-      })
-      gsap.set(builders, { x: launch.x, y: launch.y, opacity: 0, scale: .6 })
       gsap.set(source, { x: introX, y: introY, scale: introScale })
       gsap.set(lid, { opacity: 1, x: 0, y: 0, rotation: 0, transformOrigin: '50% 60%' })
       gsap.set(aperture, { opacity: 0 })
@@ -117,24 +101,7 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
         .to(overlayRef.current, { opacity: 0, duration: .4, ease: 'power2.inOut' }, 1.6)
         .to(source, { x: 0, y: 0, scale: 1, duration: .58, ease: 'power3.inOut' }, 1.46)
         .to('.creation-box__label', { opacity: 1, duration: .22 }, 1.82)
-
-      // Two builders physically carry furniture out of the opening, place it,
-      // and return through the same source before the main cursor crew starts.
-      furniture.forEach((piece, i) => {
-        const emitAt = 1.28 + i * .07
-        const target = furnitureTargets[i]
-        const builder = builders[i]
-        opening!
-          .to(piece, { opacity: 1, scale: .32, y: launch.y - target.y - 29, duration: .14, ease: 'power2.out' }, emitAt)
-          .to(piece, { x: 0, y: 0, scale: 1, rotation: 0, duration: .59, ease: 'power3.inOut' }, emitAt + .14)
-          .to(builder, { opacity: 1, scale: 1, duration: .12 }, emitAt)
-          .to(builder, { x: launch.x + 10, y: launch.y - 26, duration: .14, ease: 'power2.out' }, emitAt)
-          .to(builder, { x: target.x + 15, y: target.y - 13, duration: .59, ease: 'power3.inOut' }, emitAt + .14)
-          .to(builder, { x: target.x + 8, y: target.y + 2, duration: .08, ease: 'power2.inOut' }, emitAt + .73)
-          .to(builder, { x: home.x, y: home.y, scale: .35, duration: .19, ease: 'power2.in' }, emitAt + .81)
-          .to(builder, { opacity: 0, duration: .04 }, emitAt + .96)
-      })
-      opening.call(finish, [], 2.36)
+        .call(finish, [], 2.05)
     })
 
     const spawn = () => {
@@ -209,34 +176,6 @@ export default function CreationBox({ enabled, replayKey, onReady }: CreationBox
           <span className="creation-loader__footnote">EVERYTHING STARTS WITH AN IDEA.</span>
         </div>
       </div>
-      <div className={`creation-workstation${loading ? ' is-loading' : ''}`} aria-hidden="true">
-        <div className="creation-workstation__desk">
-          <svg viewBox="0 0 120 96" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <ellipse cx="61" cy="89" rx="53" ry="5" fill="#000" opacity=".18" />
-            <path d="M17 36L22 38V84L17 82V36Z" fill="#8B9E79" />
-            <path d="M101 34L106 32V77L101 80V34Z" fill="#6F8261" />
-            <path d="M41 45L46 47V93L41 91V45Z" fill="#AEBB9A" />
-            <path d="M12 29L78 14L113 31L46 48L12 33V29Z" fill="#91A27E" stroke="#718464" strokeWidth=".7" strokeLinejoin="round" />
-            <path d="M12 29L78 14L113 31L46 45L12 29Z" fill="#D0D6BC" stroke="#E1E4CF" strokeWidth=".7" strokeLinejoin="round" />
-            <path d="M49 49L78 42V58L49 65V49Z" fill="#849873" />
-            <path d="M58 52L69 49.5" stroke="#C2CEAC" strokeWidth="1.5" strokeLinecap="round" />
-            <path d="M46 49V91" stroke="#D7DEC4" strokeOpacity=".35" />
-          </svg>
-        </div>
-        <div className="creation-workstation__chair">
-          <svg viewBox="0 0 48 86" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <ellipse cx="25" cy="80" rx="20" ry="4" fill="#000" opacity=".18" />
-            <path d="M26 49V73M26 72L9 79M26 72L43 78M26 72L27 83" stroke="#7D8B70" strokeWidth="3" strokeLinecap="round" />
-            <path d="M31 18L37 43" stroke="#9DA98D" strokeWidth="3" strokeLinecap="round" />
-            <path d="M19 8L31 3C34 2 37 3 38 7L45 27C46 30 45 32 42 33L31 38C28 39 26 37 25 34L18 14C17 11 17 9 19 8Z" fill="#B26E55" stroke="#CA8569" strokeWidth=".8" />
-            <path d="M21 9L32 5C34 4 35 5 36 8L42 26C43 28 42 29 40 30L30 34" stroke="#E5A080" strokeWidth="1" strokeLinecap="round" />
-            <path d="M9 43L27 35L44 43V47L26 56L9 47V43Z" fill="#A96A51" />
-            <path d="M9 43L27 35L44 43L26 51L9 43Z" fill="#DE9877" stroke="#E9AE8E" strokeWidth=".7" strokeLinejoin="round" />
-          </svg>
-        </div>
-      </div>
-      <div className="creation-builder creation-builder--mira" aria-hidden="true"><svg viewBox="0 0 24 28" fill="none"><path d="M3 2L20 16L12 17L8 25L3 2Z" fill="currentColor" stroke="#171916" strokeWidth="1.6" strokeLinejoin="round" /></svg><span>Mira <i>· desk</i></span></div>
-      <div className="creation-builder creation-builder--jules" aria-hidden="true"><svg viewBox="0 0 24 28" fill="none"><path d="M3 2L20 16L12 17L8 25L3 2Z" fill="currentColor" stroke="#171916" strokeWidth="1.6" strokeLinejoin="round" /></svg><span>Jules <i>· chair</i></span></div>
       <div ref={sourceRef} data-creation-source data-ready="false" className={`creation-box${loading ? ' is-loading' : ''}`} aria-hidden="true">
         <div className="creation-box__glow" />
         <svg className="creation-box__ring" viewBox="0 0 100 100" fill="none"><path d="M50 5L94 27V73L50 95L6 73V27L50 5Z" stroke="currentColor" strokeWidth=".7" /></svg>

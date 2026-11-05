@@ -1,7 +1,7 @@
 import { useLayoutEffect, type RefObject } from 'react'
 import gsap from 'gsap'
-import { collaborators, createCursor } from './DesignTools'
-import { addElementConstruction } from './elementConstruction'
+import { collaborators, createCursor } from './design-tools'
+import { addElementConstruction } from './element-construction'
 
 /** Even the page furniture is unpacked from the same physical source. */
 export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: boolean, replayKey: number) {
@@ -19,13 +19,13 @@ export function useBoxArrival(root: RefObject<HTMLElement | null>, enabled: bool
     const context = gsap.context(() => {
       timeline = gsap.timeline()
       const activeTimeline = timeline
-      const items = Array.from(page.querySelectorAll<HTMLElement>('[data-box-arrival]'))
+      const items = Array.from(page.querySelectorAll<HTMLElement>('[data-box-arrival]')).filter(item => !item.closest('[data-construction-exempt]'))
       const names = ['Lena', 'Owen', 'June', 'Arlo', 'Esme', 'Jules', 'Tess']
       items.forEach((item, index) => {
         const target = item.getBoundingClientRect()
         const origin = source.getBoundingClientRect()
         const actor = collaborators[index % collaborators.length]
-        const cursor = createCursor({ ...actor, name: names[index % names.length], role: item.classList.contains('site-nav') ? 'Creating navigation' : item.classList.contains('assembly-dock') ? 'Building playback' : 'Placing the details' })
+        const cursor = createCursor({ ...actor, name: names[index % names.length], role: item.classList.contains('site-nav') ? 'Creating navigation' : 'Placing the details' })
         overlay.append(cursor)
         const at = .03 + index * .025
         const moveX = gsap.quickSetter(cursor, 'x', 'px')

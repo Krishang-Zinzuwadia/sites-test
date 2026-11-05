@@ -15,28 +15,30 @@ The development server starts at http://localhost:5173. `npm run build` creates 
 
 ## Behavior
 
-- A crisp idea box fills and opens. Two collaborators carry a desk and chair into the bottom-left corner, then the working crew immediately sets off from that station. It remains the source and handoff point for later assignments.
+- A crisp idea box fills, opens, and immediately releases the working crew. The box stays in the bottom-left corner as the source and handoff point for later assignments.
 - The page automatically scrolls through the construction sequence. Pause/resume and replay controls remain available; manual wheel, touch and keyboard input let the visitor take over.
 - Collaborators work in pairs on frames, text boxes, copy, typography, colors, components and alignment. A twelve-person detail crew handles copy, artwork and small shapes in parallel. Collaborators return to the box after each assignment before departing for the next. Images are inserted in place with a simulated right-click and Paste selection.
 - Every technology chip is built as a background, pasted icon, and written label. Twelve rectangle builders and twelve colorists cooperate on the demonstration activity grid: drag a rectangle, place a neutral square, click to select, then apply its color. Crews return between short groups of cells. Decorative menus follow their operating cursor and share collision-aware viewport placement.
 - The project grid assembles one row at a time. Projects, toolkit and demonstration activity are a passive canvas; the simulated collaborators do the editing.
-- The bottom dock pauses/resumes the automatic tour, replays the composition, switches motion off/on, and reports scroll progress.
+- The bottom dock is persistent interface chrome and is excluded from cursor construction. It pauses/resumes the automatic tour, replays the composition, switches motion off/on, and reports scroll progress.
 - OS reduced-motion preference shows the completed layout immediately. Normal text and links remain semantic HTML.
 
 ## Personalize
 
-This is explicitly a **fictional concept portfolio**, not a real profile. Change the Alex Morgan profile and `hello@example.com` placeholders in `src/App.tsx` and `src/components/PortfolioSections.tsx` before using it as a personal site. The projects, experience and contribution activity are demonstration content. All illustrations are original SVG code in `src/components/Illustrations.tsx`.
+This is explicitly a **fictional concept portfolio**, not a real profile. Change the Alex Morgan profile and `hello@example.com` placeholders in `src/app.tsx` and `src/components/portfolio-sections.tsx` before using it as a personal site. The projects, experience and contribution activity are demonstration content. All illustrations are original SVG code in `src/components/illustrations.tsx`.
 
-- `src/App.tsx`: navigation, profile, About and controls.
+- `src/app.tsx`: navigation, profile, About and controls.
 - `src/styles.css`: overall composition, typography and responsive rules.
-- `src/components/PortfolioSections.tsx`: projects, case studies, experience, toolkit, demonstration activity and contact.
+- `src/components/portfolio-sections.tsx`: projects, case studies, experience, toolkit, demonstration activity and contact.
 - `src/components/portfolio-sections.css`: section styling.
-- `src/motion/useAssembly.ts`: GSAP timelines, scroll boundaries and lifecycle cleanup.
+- `src/motion/use-assembly.ts`: GSAP timelines, scroll boundaries and lifecycle cleanup.
 - `src/motion/assembly.css`: cursors, selection frames, handles and emission bursts.
-- `src/components/CreationBox.tsx`: opening sequence and persistent creation source.
-- `src/motion/useAutoTour.ts`: independent automatic scroll camera and playback control.
+- `src/components/creation-box.tsx`: opening sequence and persistent creation source.
+- `src/motion/use-auto-tour.ts`: independent automatic scroll camera and playback control.
 
 Google Fonts supplies Manrope, DM Sans and IBM Plex Mono; system fallbacks are configured. The site needs no backend or API key. Cursors simulate collaboration; they are not live users.
+
+Source files use lowercase kebab-case names. React component and hook exports retain their normal TypeScript naming conventions.
 
 ## Build and preview
 

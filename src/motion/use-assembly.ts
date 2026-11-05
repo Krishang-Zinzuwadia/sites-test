@@ -1,9 +1,9 @@
 import { useLayoutEffect, type RefObject } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { collaborators, createCursor, createToolPanel } from './DesignTools';
-import { addElementConstruction } from './elementConstruction';
-import { constructionMenuPosition, releaseConstructionMenu } from './menuPlacement';
+import { collaborators, createCursor, createToolPanel } from './design-tools';
+import { addElementConstruction } from './element-construction';
+import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement';
 import './assembly.css';
 
 type AssemblyKind = 'text' | 'card' | 'art' | 'line';

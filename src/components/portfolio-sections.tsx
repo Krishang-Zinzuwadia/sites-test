@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUpRight, Circle } from 'lucide-react'
-import { ProjectArt } from './Illustrations'
+import { ProjectArt } from './illustrations'
 import './portfolio-sections.css'
 
 type ProjectKind = 'orbit' | 'forma' | 'field' | 'mono'

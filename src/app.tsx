@@ -1,11 +1,11 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowUpRight, Code2, Mail, MousePointer2, Pause, Play, RotateCcw, Sparkles } from 'lucide-react'
-import { AvatarArt, HeroArt, StickerArt } from './components/Illustrations'
-import PortfolioSections from './components/PortfolioSections'
-import { useAssembly } from './motion/useAssembly'
-import CreationBox from './components/CreationBox'
-import { useAutoTour } from './motion/useAutoTour'
-import { useBoxArrival } from './motion/useBoxArrival'
+import { AvatarArt, HeroArt, StickerArt } from './components/illustrations'
+import PortfolioSections from './components/portfolio-sections'
+import { useAssembly } from './motion/use-assembly'
+import CreationBox from './components/creation-box'
+import { useAutoTour } from './motion/use-auto-tour'
+import { useBoxArrival } from './motion/use-box-arrival'
 
 const MemoPortfolioSections = memo(PortfolioSections)
 
@@ -135,7 +135,7 @@ function App() {
       <div className="floating-sticker sticker-flower" aria-hidden="true" data-box-arrival><StickerArt kind="flower" /></div>
       <div className="floating-sticker sticker-cube" aria-hidden="true" data-box-arrival><StickerArt kind="cube" /></div>
 
-      <div className="assembly-dock" role="region" aria-label="Animation controls" data-box-arrival>
+      <div className="assembly-dock" role="region" aria-label="Animation controls" data-construction-exempt>
         <div className="collaborator-stack" aria-hidden="true"><span>M</span><span>N</span><span>L</span><span>A</span><span>E</span><span>Y</span><span className="team-count">+</span></div>
         <span className="dock-status"><span className={`status-dot ${motion && tour.playing ? '' : 'paused'}`} /><span>{!motion ? reducedMotion ? 'Reduced motion' : 'Motion off' : tour.status === 'complete' ? 'A world, unpacked' : tour.status === 'paused' ? 'Tour paused' : 'One crew, one box'}</span></span>
         <span className="dock-divider" />

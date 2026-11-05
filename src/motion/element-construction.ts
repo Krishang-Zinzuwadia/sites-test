@@ -1,8 +1,8 @@
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { collaborators, createCursor, type Collaborator } from './DesignTools'
-import { addSpecialConstruction } from './specialConstruction'
-import { constructionMenuPosition, releaseConstructionMenu } from './menuPlacement'
+import { collaborators, createCursor, type Collaborator } from './design-tools'
+import { addSpecialConstruction } from './special-construction'
+import { constructionMenuPosition, releaseConstructionMenu } from './menu-placement'
 import './element-construction.css'
 
 type ElementConstructionOptions = {
@@ -42,7 +42,7 @@ type Job = {
 }
 
 const atomicSelector = '[data-construction-atom], svg, img, canvas'
-const excludedSelector = '.assembly-overlay, [data-build-tech], [data-build-grid], script, style, noscript, template'
+const excludedSelector = '.assembly-overlay, [data-construction-exempt], [data-build-tech], [data-build-grid], script, style, noscript, template'
 const imageSelector = 'svg, img, canvas, [data-construction-atom="icon"]'
 const typeProperties = [
   'font-family', 'font-size', 'font-weight', 'font-style', 'font-stretch',
