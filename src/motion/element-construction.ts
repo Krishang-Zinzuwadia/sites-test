@@ -16,6 +16,7 @@ type ElementConstructionOptions = {
   start?: number
   end?: number
   skip?: HTMLElement[]
+  onPrimaryArtworkReady?: () => void
 }
 
 type Piece = HTMLElement | SVGElement
@@ -149,7 +150,7 @@ function actionFor(leaf: Piece, art: boolean, text: string): string {
  * All semantic nodes stay in place; only decorative ghosts contain changing text.
  * Call inside the assembly GSAP context and before normalizing its duration.
  */
-export function addElementConstruction({ scene, overlay, timeline, targets, start = 4.05, end = 9.05, skip = [] }: ElementConstructionOptions): () => void {
+export function addElementConstruction({ scene, overlay, timeline, targets, start = 4.05, end = 9.05, skip = [], onPrimaryArtworkReady }: ElementConstructionOptions): () => void {
   const hasTech = Array.from(scene.querySelectorAll('[data-build-tech]')).some(node => node.closest('.assembly-scene') === scene)
   // Toolkit icon menus receive their own later window. Generic image menus
   // finish first, so only one context menu is ever asking for attention.
@@ -450,6 +451,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
       job.menuBox = undefined
     }
   }
+  let artworkReadyAt = start
   for (const job of jobs) {
     const at = start + job.at * unit
     const duration = job.weight * unit
@@ -468,6 +470,7 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
 
     if (job.kind === 'art' && job.pasted) {
       const clickAt = workStart + writing * 0.52
+      if (primaryArtwork.has(job.leaf)) artworkReadyAt = Math.max(artworkReadyAt, clickAt + writing * 0.38)
       menuWindows.push({ job, open: workStart + writing * .08, close: clickAt + writing * .22 })
       timeline.call(() => {
         placeMenu(job, true)
@@ -541,6 +544,10 @@ export function addElementConstruction({ scene, overlay, timeline, targets, star
     travelTo(job, () => cursorPoint(job.worker), liveSource, returnAt, returnDuration, 'Task complete · back to the box')
     timeline.to(job.worker.cursor, { scale: 0.18, autoAlpha: 0, duration: .08 * unit, immediateRender: false }, returnAt + returnDuration)
   }
+
+  // Release the camera when the main artwork is pasted, while this crew still
+  // finishes its details and returns home. The next crew can already be working.
+  if (primaryArtwork.size && onPrimaryArtworkReady) timeline.call(onPrimaryArtworkReady, [], artworkReadyAt)
 
   // A time-derived guard also runs after fast seeks which skip individual
   // open/close callbacks. It never hides a menu during its real Paste task.

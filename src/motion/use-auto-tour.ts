@@ -33,10 +33,12 @@ export function useAutoTour(enabled: boolean, replayKey: number) {
       setAssemblyFlow(flow)
       if (flow !== 'complete') setComplete(false)
     }
+    document.addEventListener('assembly:intro-handoff', finishIntro)
     document.addEventListener('assembly:intro-complete', finishIntro)
     document.addEventListener('assembly:flow-state', readFlow)
     readFlow()
     return () => {
+      document.removeEventListener('assembly:intro-handoff', finishIntro)
       document.removeEventListener('assembly:intro-complete', finishIntro)
       document.removeEventListener('assembly:flow-state', readFlow)
     }

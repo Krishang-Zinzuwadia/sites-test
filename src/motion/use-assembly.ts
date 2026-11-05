@@ -34,7 +34,7 @@ type ScenePlan = {
   sourceOrigins: Map<number, Point>;
   copyBox: Box; copy: string; fontFamily: string; mobile: boolean;
   timeline?: gsap.core.Timeline; trigger?: ScrollTrigger; intro: boolean; introComplete?: boolean; timed?: boolean;
-  onIntroProgress?: (progress: number) => void; onIntroComplete?: () => void;
+  onIntroProgress?: (progress: number) => void; onIntroHandoff?: () => void; onIntroComplete?: () => void;
   onTimedProgress?: () => void;
   constructionCleanup?: () => void;
   invalidateCaret?: () => void;
@@ -660,6 +660,7 @@ function animateScene(plan: ScenePlan, mobile: boolean) {
     start: 3.15,
     end: 9.65,
     skip: [plan.copyLeaf],
+    onPrimaryArtworkReady: plan.intro ? plan.onIntroHandoff : undefined,
   });
   timeline.duration(plan.intro ? 8 : 10);
   timeline.eventCallback('onUpdate', () => {
@@ -732,6 +733,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
     let disposed = false;
     let playbackPaused = element.dataset.playback === 'paused';
     let introFinished = false;
+    let introReleased = false;
     let introProgress = 0;
     const timedProgress = new Map<HTMLElement, number>();
     const context = gsap.context(() => {
@@ -789,7 +791,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
         // With the entire page in view there is no scroll distance to scrub.
         // Keep the same crews and jobs, with up to three scenes overlapping.
         function advanceTimedPlayback() {
-          if (!active || disposed || !noScroll || !introFinished || advancingTimedPlayback) return;
+          if (!active || disposed || !noScroll || !introReleased || advancingTimedPlayback) return;
           if (playbackPaused) return;
           publishFlow(flowStatus.assemblyFlow === 'complete' ? 'complete' : 'playing');
           timedPlans.forEach(plan => { if (plan.timeline?.progress() === 1) timedPlans.delete(plan); });
@@ -890,7 +892,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
         const nextIdleRecord = () => {
           while (prewarmRecords.length && !pending.has(prewarmRecords[0])) prewarmRecords.shift();
           if (prewarmRecords.length) return prewarmRecords[0];
-          if (!introFinished && !hasObservedMovement) return undefined;
+          if (!introReleased && !hasObservedMovement) return undefined;
           return nearestPendingRecord();
         };
         const runIdleBuild = (deadline?: IdleDeadline) => {
@@ -917,7 +919,7 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
           else idleTimer = window.setTimeout(() => {
             idleTimer = undefined;
             idleFrame = requestAnimationFrame(() => runIdleBuild());
-          }, introFinished ? 32 : 120);
+          }, introReleased ? 32 : 120);
         }
 
         // Idle, intersection, and focus callbacks execute after this media callback
@@ -942,8 +944,16 @@ export function useAssembly(root: RefObject<HTMLElement | null>, enabled: boolea
                 queueIdleBuild();
               }
             };
+            plan.onIntroHandoff = () => {
+              if (introReleased) return;
+              introReleased = true;
+              queueIdleBuild();
+              advanceTimedPlayback();
+              document.dispatchEvent(new CustomEvent('assembly:intro-handoff'));
+            };
             plan.onIntroComplete = () => {
               introFinished = true;
+              plan.onIntroHandoff?.();
               queueIdleBuild();
               advanceTimedPlayback();
             };
