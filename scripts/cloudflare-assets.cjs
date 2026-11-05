@@ -125,4 +125,3 @@ if (require.main === module) main().then(result => {
 })
 
 module.exports = { collectAssets, hashAsset, uploadAssets }
-

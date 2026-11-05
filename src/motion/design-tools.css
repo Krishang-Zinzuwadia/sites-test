@@ -1,6 +1,8 @@
 /* Decorative design controls are only operated by the scroll choreography. */
 .design-tool-panel,
 .design-tool-panel *,
+.assembly-cursor,
+.assembly-cursor *,
 .assembly-cursor-action {
   pointer-events: none !important;
   user-select: none;
@@ -21,6 +23,10 @@
   letter-spacing: -.15px;
   white-space: nowrap;
 }
+
+.assembly-cursor--helper .assembly-cursor-arrow { width: 17px; height: 22px; }
+.assembly-cursor--helper .assembly-cursor-name { top: 18px; left: 11px; padding: 3px 6px; font-size: 9px; }
+.assembly-cursor--helper .assembly-cursor-action { top: 38px; left: 11px; font-size: 7px; }
 
 .design-tool-panel {
   position: absolute;
@@ -96,7 +102,25 @@
   .design-tool-heading { padding: 0 8px; }
   .design-tool-body { padding: 8px; }
   .design-tool-footer { padding-left: 8px; font-size: 6px; }
+  .design-tool-swatches { gap: 6px; }
   .assembly-cursor-action { top: 40px; font-size: 7px; }
+  .assembly-cursor--helper .assembly-cursor-name { display: none; }
+  .assembly-cursor--helper::after {
+    content: attr(data-initial);
+    position: absolute;
+    top: 16px;
+    left: 10px;
+    display: grid;
+    place-items: center;
+    width: 14px;
+    height: 14px;
+    border: 1px solid #ffffff35;
+    border-radius: 50%;
+    background: var(--collaborator-color);
+    color: #252b20;
+    font: 600 7px/1 var(--sans, 'Manrope', sans-serif);
+  }
+  .assembly-cursor--helper .assembly-cursor-action { top: 33px; left: 10px; max-width: 105px; padding: 3px 5px; overflow: hidden; text-overflow: ellipsis; font-size: 6px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

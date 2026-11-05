@@ -2,6 +2,10 @@
   position: relative;
 }
 
+.site-root[data-stage='loading'][data-motion='on'] [data-assemble] {
+  opacity: 0;
+}
+
 .assembly-overlay {
   position: absolute;
   inset: 0;
@@ -100,6 +104,56 @@
   background: #a8c99a;
   box-shadow: 0 0 8px #a8c99a40;
 }
+
+.assembly-origin-particle {
+  position: absolute;
+  z-index: 7;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 1px;
+  background: var(--spark-color, #a8c99a);
+  box-shadow: 0 0 5px var(--spark-color, #a8c99a);
+  opacity: 0;
+  visibility: hidden;
+}
+
+.assembly-text-box-guide {
+  position: absolute;
+  border: 1px solid #a899dc;
+  background: #a899dc08;
+  box-shadow: 0 0 0 3px #a899dc07;
+  opacity: 0;
+  visibility: hidden;
+  transform-origin: center;
+}
+
+.assembly-pair-grid {
+  position: absolute;
+  background-image: linear-gradient(#d4b65d30 1px, transparent 1px), linear-gradient(90deg, #d4b65d30 1px, transparent 1px);
+  background-size: 16px 16px;
+  border: 1px solid #d4b65d55;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.assembly-proof-check,
+.assembly-contrast-check {
+  position: absolute;
+  z-index: 5;
+  padding: 4px 6px;
+  border: 1px solid #91c5a47a;
+  border-radius: 4px;
+  background: #20271fed;
+  color: #b8dcc0;
+  font: 7px/1.2 var(--mono, monospace);
+  letter-spacing: 0.1px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.assembly-contrast-check { border-color: #70b7c77a; color: #a6d8e2; }
 
 .assembly-alignment-guides {
   position: absolute;

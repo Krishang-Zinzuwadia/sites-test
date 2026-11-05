@@ -1,6 +1,6 @@
 # Assembled
 
-A concept portfolio that feels like collaborators are designing it together as you scroll. Built with Vite, React, TypeScript, GSAP and original inline SVG artwork.
+A concept portfolio unpacked from a single idea box, built by a crew of collaborators while the page scrolls itself. Built with Vite, React, TypeScript, GSAP and original inline SVG artwork.
 
 ## Run
 
@@ -15,11 +15,11 @@ The development server starts at http://localhost:5173. `npm run build` creates 
 
 ## Behavior
 
-- The illustrated opening assembles automatically. Later sections follow scroll progress and reverse when scrolling upward.
-- Six collaborators have distinct jobs: drawing frames, creating text boxes, typing copy, choosing typography, applying color, building components and aligning the layout. Contextual property panels and guides make their actions visible.
-- The project grid assembles one row at a time; each case-study button opens a keyboard accessible dialog.
-- Toolkit categories filter locally. The illustrative activity grid supports arrow-key exploration.
-- The bottom dock replays the composition, switches motion off/on, and reports scroll progress.
+- A box-shaped opening sequence fills, bursts open and becomes the source of the page's elements.
+- The page automatically scrolls through the construction sequence. Pause/resume and replay controls remain available; manual wheel, touch and keyboard input let the visitor take over.
+- Collaborators work in pairs on frames, text boxes, copy, typography, colors, components and alignment. Additional builders individually author labels, headings, paragraphs, icons and illustration assets. Elements emerge from the source box with small geometric bursts before settling into the finished layout.
+- The project grid assembles one row at a time. Projects, toolkit and demonstration activity are a passive canvas; the simulated collaborators do the editing.
+- The bottom dock pauses/resumes the automatic tour, replays the composition, switches motion off/on, and reports scroll progress.
 - OS reduced-motion preference shows the completed layout immediately. Normal text and links remain semantic HTML.
 
 ## Personalize
@@ -31,7 +31,9 @@ This is explicitly a **fictional concept portfolio**, not a real profile. Change
 - `src/components/PortfolioSections.tsx`: projects, case studies, experience, toolkit, demonstration activity and contact.
 - `src/components/portfolio-sections.css`: section styling.
 - `src/motion/useAssembly.ts`: GSAP timelines, scroll boundaries and lifecycle cleanup.
-- `src/motion/assembly.css`: cursors, selection frames and handles.
+- `src/motion/assembly.css`: cursors, selection frames, handles and emission bursts.
+- `src/components/CreationBox.tsx`: opening sequence and persistent creation source.
+- `src/motion/useAutoTour.ts`: independent automatic scroll camera and playback control.
 
 Google Fonts supplies Manrope, DM Sans and IBM Plex Mono; system fallbacks are configured. The site needs no backend or API key. Cursors simulate collaboration; they are not live users.
 

@@ -13,14 +13,24 @@ export const collaborators: Collaborator[] = [
   { name: 'Ava', color: '#8dced2', role: 'color' },
   { name: 'Eli', color: '#e5c278', role: 'spacing' },
   { name: 'You', color: '#df9fbb', role: 'components' },
+  { name: 'Finn', color: '#d9956c', role: 'frame' },
+  { name: 'Iris', color: '#a899dc', role: 'textbox' },
+  { name: 'Sam', color: '#91c5a4', role: 'proof' },
+  { name: 'Zoe', color: '#70b7c7', role: 'contrast' },
+  { name: 'Remy', color: '#d4b65d', role: 'grid' },
+  { name: 'Kai', color: '#ca83a5', role: 'assets' },
 ]
 
 export function createCursor(actor: Collaborator): HTMLDivElement {
   const cursor = document.createElement('div')
-  cursor.className = 'assembly-cursor'
+  const helper = ['frame', 'textbox', 'proof', 'contrast', 'grid', 'assets'].includes(actor.role)
+  cursor.className = helper ? 'assembly-cursor assembly-cursor--helper' : 'assembly-cursor'
   cursor.dataset.collaborator = actor.name
+  cursor.dataset.helper = String(helper)
+  cursor.dataset.initial = actor.name.charAt(0)
   cursor.style.setProperty('--collaborator-color', actor.color)
   cursor.setAttribute('aria-hidden', 'true')
+  cursor.inert = true
   cursor.innerHTML = `<svg class="assembly-cursor-arrow" viewBox="0 0 20 25" aria-hidden="true"><path d="M2 2 3.6 20.2 8.6 15.5 12.2 23 15.5 21.4 11.9 14 18.4 13.6 2 2Z"/></svg><span class="assembly-cursor-name"></span><span class="assembly-cursor-action"></span>`
   cursor.querySelector('.assembly-cursor-name')!.textContent = actor.name
   cursor.querySelector('.assembly-cursor-action')!.textContent = actor.role
